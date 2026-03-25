@@ -1,0 +1,386 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// CORE: Contabilidade + Usuários
+// ============================================================
+
+model Accounting {
+  id         String   @id @default(uuid())
+  name       String
+  cnpj       String   @unique
+  email      String   @unique
+  phone      String?
+  address    String?
+  logo_url   String?
+  plan       String   @default("free")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  users            User[]
+  clients          Client[]
+  chartOfAccounts  ChartOfAccounts[]
+  monthlyMovements MonthlyMovement[]
+  dreMappings      DREMapping[]
+  dfcLineMappings  DFCLineMapping[]
+  documents        ClientDocument[]
+  supportTickets   SupportTicket[]
+}
+
+model User {
+  id            String   @id @default(uuid())
+  accounting_id String
+  name          String
+  email         String   @unique
+  password_hash String
+  role          String   @default("collaborator") // "admin" | "collaborator"
+  status        String   @default("active") // "active" | "inactive"
+  phone         String?
+  avatar_url    String?
+  mfa_secret    String? // TOTP secret for 2FA
+  mfa_enabled   Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id])
+
+  @@index([accounting_id])
+  @@index([email])
+}
+
+// ============================================================
+// AUTH: Sessões + Tokens temporários
+// ============================================================
+
+model AuthSession {
+  id                     String    @id @default(uuid())
+  subject_type           String // "staff" | "client"
+  role                   String
+  user_id                String?
+  client_id              String?
+  accounting_id          String
+  refresh_token_hash     String    @unique
+  expires_at             DateTime
+  revoked_at             DateTime?
+  replaced_by_session_id String?
+  last_used_at           DateTime?
+  ip_address             String?
+  user_agent             String?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  @@index([accounting_id])
+  @@index([user_id])
+  @@index([client_id])
+  @@index([subject_type])
+  @@index([expires_at])
+  @@index([revoked_at])
+  @@index([replaced_by_session_id])
+}
+
+model AccountActionToken {
+  id            String    @id @default(uuid())
+  purpose       String // "forgot_password" | "reset_password" | "invite" | "accept_invite"
+  subject_type  String
+  accounting_id String?
+  user_id       String?
+  client_id     String?
+  email         String?
+  token_hash    String    @unique
+  expires_at    DateTime
+  used_at       DateTime?
+  metadata      Json?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([purpose])
+  @@index([subject_type])
+  @@index([accounting_id])
+  @@index([user_id])
+  @@index([client_id])
+  @@index([email])
+  @@index([expires_at])
+  @@index([used_at])
+}
+
+// ============================================================
+// AUDIT: Log de todas as ações
+// ============================================================
+
+model AuditEvent {
+  id            String   @id @default(uuid())
+  actor_type    String? // "staff" | "client" | "system"
+  actor_role    String?
+  actor_id      String?
+  accounting_id String?
+  client_id     String?
+  action        String
+  entity_type   String
+  entity_id     String?
+  metadata      Json?
+  request_id    String?
+  ip_address    String?
+  user_agent    String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([actor_id])
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([action])
+  @@index([entity_type])
+  @@index([entity_id])
+  @@index([created_at])
+}
+
+// ============================================================
+// CLIENTS: Empresas atendidas
+// ============================================================
+
+model Client {
+  id                   String   @id @default(uuid())
+  accounting_id        String
+  name                 String
+  cnpj                 String   @unique
+  email                String?
+  phone                String?
+  industry             String?
+  address              String?
+  status               String   @default("active") // "active" | "inactive"
+  password_hash        String?
+  tax_regime           String? // "simples" | "presumido" | "real" | "mei"
+  representative_email String?
+  representative_name  String?
+  deleted_at           DateTime? // Soft delete (LGPD + dados fiscais)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  accounting       Accounting        @relation(fields: [accounting_id], references: [id])
+  chartOfAccounts  ChartOfAccounts[]
+  monthlyMovements MonthlyMovement[]
+  dreMappings      DREMapping[]
+  dfcLineMappings  DFCLineMapping[]
+  documents        ClientDocument[]
+  supportTickets   SupportTicket[]
+
+  @@index([accounting_id])
+  @@index([cnpj])
+  @@index([status])
+  @@index([deleted_at])
+}
+
+// ============================================================
+// SUPPORT: Tickets + Mensagens + Documentos
+// ============================================================
+
+model SupportTicket {
+  id            String    @id @default(uuid())
+  accounting_id String
+  client_id     String
+  subject       String
+  message       String
+  priority      String    @default("medium") // "low" | "medium" | "high"
+  status        String    @default("open") // "open" | "in_progress" | "closed"
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  closed_at     DateTime?
+
+  accounting Accounting              @relation(fields: [accounting_id], references: [id])
+  client     Client                  @relation(fields: [client_id], references: [id])
+  messages   SupportTicketMessage[]
+  documents  SupportTicketDocument[]
+
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([status])
+}
+
+model SupportTicketMessage {
+  id                String   @id @default(uuid())
+  support_ticket_id String
+  author_role       String // "staff" | "client"
+  author_name       String
+  body              String
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  ticket SupportTicket @relation(fields: [support_ticket_id], references: [id], onDelete: Cascade)
+
+  @@index([support_ticket_id])
+  @@index([created_at])
+}
+
+model SupportTicketDocument {
+  id                 String   @id @default(uuid())
+  support_ticket_id  String
+  client_document_id String
+  created_by_role    String
+  created_by_name    String
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  ticket   SupportTicket  @relation(fields: [support_ticket_id], references: [id], onDelete: Cascade)
+  document ClientDocument @relation(fields: [client_document_id], references: [id], onDelete: Cascade)
+
+  @@unique([support_ticket_id, client_document_id], name: "support_ticket_id_client_document_id")
+  @@index([support_ticket_id])
+  @@index([client_document_id])
+}
+
+// ============================================================
+// ACCOUNTING: Plano de Contas + Movimentações
+// ============================================================
+
+model ChartOfAccounts {
+  id              String   @id @default(uuid())
+  accounting_id   String
+  client_id       String?
+  code            String
+  reduced_code    String?
+  name            String
+  type            String   @default("A") // "A" (analítica) | "S" (sintética)
+  parent_id       String?
+  is_analytic     Boolean  @default(true)
+  level           Int      @default(1)
+  alias           String?
+  report_type     String? // "dre" | "patrimonial"
+  report_category String?
+  is_mapped       Boolean  @default(false)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  accounting      Accounting       @relation(fields: [accounting_id], references: [id])
+  client          Client?          @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  dfcLineMappings DFCLineMapping[]
+
+  @@unique([accounting_id, code])
+  @@unique([accounting_id, reduced_code])
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([code])
+}
+
+model MonthlyMovement {
+  id            String   @id @default(uuid())
+  accounting_id String
+  client_id     String
+  year          Int
+  code          String
+  reduced_code  String?
+  name          String
+  level         Int      @default(1)
+  values        Float[] // Array de 12 valores (Jan-Dez)
+  type          String   @default("dre") // "dre" | "patrimonial"
+  category      String?
+  is_mapped     Boolean  @default(false)
+  deleted_at    DateTime? // Soft delete
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id])
+  client     Client     @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_id, year, code, type])
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([client_id, year])
+  @@index([type])
+  @@index([client_id, year, type])
+  @@index([client_id, reduced_code])
+  @@index([deleted_at])
+}
+
+// ============================================================
+// DRE: Mapeamento de categorias
+// ============================================================
+
+model DREMapping {
+  id            String   @id @default(uuid())
+  accounting_id String
+  client_id     String?
+  account_code  String
+  account_name  String
+  category      String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id])
+  client     Client?    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_id, account_code], name: "client_id_account_code")
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([category])
+}
+
+// ============================================================
+// DFC: Mapeamento de linhas do fluxo de caixa
+// ============================================================
+
+model DFCLineMapping {
+  id                    String   @id @default(uuid())
+  accounting_id         String
+  client_id             String
+  line_key              String
+  chart_account_id      String
+  account_code_snapshot String
+  reduced_code_snapshot String?
+  source_type           String
+  multiplier            Float    @default(1)
+  include_children      Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  accounting    Accounting      @relation(fields: [accounting_id], references: [id])
+  client        Client          @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  chart_account ChartOfAccounts @relation(fields: [chart_account_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_id, line_key, chart_account_id], name: "client_id_line_key_chart_account_id")
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([line_key])
+  @@index([chart_account_id])
+}
+
+// ============================================================
+// DOCUMENTS: Upload de documentos por cliente
+// ============================================================
+
+model ClientDocument {
+  id            String   @id @default(uuid())
+  accounting_id String
+  client_id     String
+  original_name String
+  display_name  String
+  category      String
+  document_type String   @default("general")
+  period_year   Int?
+  period_month  Int?
+  mime_type     String
+  size_bytes    Int
+  storage_path  String?
+  content       Bytes? // Binary content (fallback if no filesystem)
+  deleted_at    DateTime? // Soft delete
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  accounting     Accounting              @relation(fields: [accounting_id], references: [id])
+  client         Client                  @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  supportTickets SupportTicketDocument[]
+
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([category])
+  @@index([document_type])
+  @@index([period_year])
+  @@index([period_month])
+  @@index([storage_path])
+  @@index([created_at])
+  @@index([deleted_at])
+}
