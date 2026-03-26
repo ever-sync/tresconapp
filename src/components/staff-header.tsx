@@ -1,0 +1,71 @@
+"use client";
+
+import { useMemo } from "react";
+import { Search } from "lucide-react";
+import { usePathname } from "next/navigation";
+
+import { NotificationPopover } from "@/components/notification-popover";
+
+const STAFF_TITLES: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/dashboard/clientes": "Clientes",
+  "/dashboard/documentos": "Documentos",
+  "/dashboard/plano-de-contas": "Plano de Contas",
+  "/dashboard/parametrizacao": "Parametrizacao",
+  "/dashboard/suporte": "Suporte",
+  "/dashboard/equipe": "Equipe",
+  "/dashboard/auditoria": "Auditoria",
+  "/dashboard/ajuda": "Ajuda",
+};
+
+export function StaffHeader() {
+  const pathname = usePathname();
+
+  const title = useMemo(() => {
+    return (
+      Object.entries(STAFF_TITLES).find(([route]) =>
+        pathname === route || pathname.startsWith(`${route}/`)
+      )?.[1] ?? "Contabilidade"
+    );
+  }, [pathname]);
+
+  return (
+    <header className="sticky top-0 z-30 border-b border-white/8 bg-[linear-gradient(180deg,rgba(8,19,37,0.96),rgba(9,20,38,0.92))] backdrop-blur">
+      <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+        <div>
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.38em] text-cyan-300/70">
+            Contabilidade
+          </p>
+          <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
+            {title}
+          </h1>
+        </div>
+
+        <div className="flex w-full max-w-xl items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-400 lg:w-auto">
+          <Search className="h-4 w-4 shrink-0" />
+          <input
+            placeholder="Buscar cliente, documento ou conta..."
+            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <NotificationPopover title="Contabilidade" audience="staff" />
+
+          <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[linear-gradient(145deg,#2dd4ff_0%,#1499ff_48%,#0f6dff_100%)] font-bold text-white">
+              A
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm font-semibold text-white">Administrador</p>
+              <p className="text-xs text-slate-500">Contabilidade Exemplo LTDA</p>
+            </div>
+            <span className="rounded-full bg-cyan-400/15 px-2 py-1 text-[0.65rem] font-bold uppercase tracking-[0.28em] text-cyan-300">
+              Admin
+            </span>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}

@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================
@@ -28,9 +29,11 @@ model Accounting {
   chartOfAccounts  ChartOfAccounts[]
   monthlyMovements MonthlyMovement[]
   dreMappings      DREMapping[]
+  patrimonialMappings PatrimonialMapping[]
   dfcLineMappings  DFCLineMapping[]
   documents        ClientDocument[]
   supportTickets   SupportTicket[]
+  notifications    Notification[]
 }
 
 model User {
@@ -165,9 +168,11 @@ model Client {
   chartOfAccounts  ChartOfAccounts[]
   monthlyMovements MonthlyMovement[]
   dreMappings      DREMapping[]
+  patrimonialMappings PatrimonialMapping[]
   dfcLineMappings  DFCLineMapping[]
   documents        ClientDocument[]
   supportTickets   SupportTicket[]
+  notifications    Notification[]
 
   @@index([accounting_id])
   @@index([cnpj])
@@ -320,13 +325,36 @@ model DREMapping {
 }
 
 // ============================================================
+// PATRIMONIAL: Mapeamento de categorias patrimoniais
+// ============================================================
+
+model PatrimonialMapping {
+  id            String   @id @default(uuid())
+  accounting_id String
+  client_id     String?
+  account_code  String
+  account_name  String
+  category      String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id])
+  client     Client?    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@unique([client_id, account_code], name: "client_id_account_code")
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([category])
+}
+
+// ============================================================
 // DFC: Mapeamento de linhas do fluxo de caixa
 // ============================================================
 
 model DFCLineMapping {
   id                    String   @id @default(uuid())
   accounting_id         String
-  client_id             String
+  client_id             String?
   line_key              String
   chart_account_id      String
   account_code_snapshot String
@@ -338,7 +366,7 @@ model DFCLineMapping {
   updated_at            DateTime @updatedAt
 
   accounting    Accounting      @relation(fields: [accounting_id], references: [id])
-  client        Client          @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  client        Client?         @relation(fields: [client_id], references: [id], onDelete: Cascade)
   chart_account ChartOfAccounts @relation(fields: [chart_account_id], references: [id], onDelete: Cascade)
 
   @@unique([client_id, line_key, chart_account_id], name: "client_id_line_key_chart_account_id")
@@ -366,6 +394,8 @@ model ClientDocument {
   size_bytes    Int
   storage_path  String?
   content       Bytes? // Binary content (fallback if no filesystem)
+  description   String?
+  viewed_at     DateTime?
   deleted_at    DateTime? // Soft delete
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
@@ -383,4 +413,34 @@ model ClientDocument {
   @@index([storage_path])
   @@index([created_at])
   @@index([deleted_at])
+}
+
+// ============================================================
+// NOTIFICATIONS: Notificacoes da contabilidade e do cliente
+// ============================================================
+
+model Notification {
+  id            String   @id @default(uuid())
+  accounting_id String
+  client_id     String?
+  audience      String // "staff" | "client"
+  kind          String // "arquivos" | "sistema"
+  title         String
+  description   String
+  entity_type   String?
+  entity_id     String?
+  is_read       Boolean  @default(false)
+  read_at       DateTime?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id], onDelete: Cascade)
+  client     Client?    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([audience])
+  @@index([kind])
+  @@index([is_read])
+  @@index([created_at])
 }
