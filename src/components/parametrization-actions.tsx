@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Plus, Save, Search, Trash2, X } from "lucide-react";
 
 type ParametrizationKind = "dre" | "patrimonial" | "dfc";
@@ -27,24 +27,29 @@ export function ParametrizationAddButton({
   label = "Adicionar conta",
   disabled = false,
   onSaved,
+  onSavedMany,
 }: {
   kind: ParametrizationKind;
   target: string;
   label?: string;
   disabled?: boolean;
   onSaved?: (account: AccountOption) => void;
+  onSavedMany?: (accounts: AccountOption[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [selectedAccounts, setSelectedAccounts] = useState<AccountOption[]>([]);
   const [saving, setSaving] = useState(false);
+  const lastToggledIndexRef = useRef<number | null>(null);
 
-  const selectedAccount = useMemo(
-    () => accounts.find((account) => account.id === selectedAccountId) ?? null,
-    [accounts, selectedAccountId]
+  const selectedAccountIds = useMemo(
+    () => new Set(selectedAccounts.map((account) => account.id)),
+    [selectedAccounts]
   );
+  const selectedCount = selectedAccounts.length;
+  const primarySelectedAccount = selectedAccounts[0] ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -89,21 +94,77 @@ export function ParametrizationAddButton({
 
     setQuery("");
     setAccounts([]);
-    setSelectedAccountId(null);
+    setSelectedAccounts([]);
+    lastToggledIndexRef.current = null;
   }, [open]);
 
-  useEffect(() => {
-    if (accounts.length === 0) return;
+  function toggleAccount(
+    account: AccountOption,
+    index: number,
+    event?: React.MouseEvent<HTMLButtonElement>
+  ) {
+    setSelectedAccounts((current) => {
+      const currentIds = new Set(current.map((item) => item.id));
+      const shouldSelect = !currentIds.has(account.id);
 
-    const stillVisible = accounts.some((account) => account.id === selectedAccountId);
-    if (!stillVisible) {
-      setSelectedAccountId(accounts[0].id);
-    }
-  }, [accounts, selectedAccountId]);
+      if (event?.shiftKey && lastToggledIndexRef.current !== null) {
+        const start = Math.min(lastToggledIndexRef.current, index);
+        const end = Math.max(lastToggledIndexRef.current, index);
+        const range = accounts.slice(start, end + 1);
+
+        if (shouldSelect) {
+          const next = current.slice();
+          for (const item of range) {
+            if (!currentIds.has(item.id)) {
+              currentIds.add(item.id);
+              next.push(item);
+            }
+          }
+          return next;
+        }
+
+        const rangeIds = new Set(range.map((item) => item.id));
+        return current.filter((item) => !rangeIds.has(item.id));
+      }
+
+      if (!shouldSelect) {
+        return current.filter((item) => item.id !== account.id);
+      }
+
+      return [...current, account];
+    });
+
+    lastToggledIndexRef.current = index;
+  }
+
+  function removeSelectedAccount(accountId: string) {
+    setSelectedAccounts((current) => current.filter((item) => item.id !== accountId));
+  }
+
+  function selectVisibleAccounts() {
+    setSelectedAccounts((current) => {
+      const selectedIds = new Set(current.map((item) => item.id));
+      const next = current.slice();
+
+      for (const account of accounts) {
+        if (!selectedIds.has(account.id)) {
+          selectedIds.add(account.id);
+          next.push(account);
+        }
+      }
+
+      return next;
+    });
+  }
+
+  function clearVisibleAccounts() {
+    const visibleIds = new Set(accounts.map((account) => account.id));
+    setSelectedAccounts((current) => current.filter((item) => !visibleIds.has(item.id)));
+  }
 
   async function handleSave() {
-    if (!selectedAccount) {
-      window.alert("Selecione uma conta para continuar");
+    if (selectedAccounts.length === 0) {
+      window.alert("Selecione pelo menos uma conta para continuar");
       return;
     }
 
@@ -113,10 +174,10 @@ export function ParametrizationAddButton({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "add-mapping",
+          action: "add-mappings",
           kind,
           target,
-          accountCode: selectedAccount.code,
+          accountCodes: selectedAccounts.map((account) => account.code),
         }),
       });
 
@@ -125,8 +186,10 @@ export function ParametrizationAddButton({
         throw new Error(payload.error || "Nao foi possivel salvar o mapeamento");
       }
 
-      if (selectedAccount) {
-        onSaved?.(selectedAccount);
+      if (onSavedMany) {
+        onSavedMany(selectedAccounts);
+      } else if (selectedAccounts.length === 1) {
+        onSaved?.(selectedAccounts[0]);
       }
       setOpen(false);
     } catch (err) {
@@ -153,7 +216,7 @@ export function ParametrizationAddButton({
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/80 px-4 py-6 backdrop-blur-sm">
           <button
             type="button"
             aria-label="Fechar"
@@ -161,7 +224,7 @@ export function ParametrizationAddButton({
             className="absolute inset-0 cursor-default"
           />
 
-          <div className="relative z-10 w-full max-w-4xl overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.99),rgba(10,18,32,0.97))] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+          <div className="relative z-10 my-auto flex max-h-[calc(100vh-3rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.99),rgba(10,18,32,0.97))] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
             <div className="flex items-start justify-between gap-4 border-b border-white/8 px-6 py-5">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.32em] text-cyan-300/70">
@@ -184,8 +247,8 @@ export function ParametrizationAddButton({
               </button>
             </div>
 
-            <div className="grid gap-5 px-6 py-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <section className="rounded-[1.5rem] border border-white/8 bg-white/4 p-4">
+            <div className="grid min-h-0 gap-5 overflow-y-auto px-6 py-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <section className="min-h-0 rounded-[1.5rem] border border-white/8 bg-white/4 p-4">
                 <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-400">
                   <Search className="h-4 w-4 shrink-0" />
                   <input
@@ -194,6 +257,31 @@ export function ParametrizationAddButton({
                     placeholder="Buscar por codigo, reduzido ou nome..."
                     className="w-full bg-transparent text-sm outline-none placeholder:text-slate-500"
                   />
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-slate-500">
+                    Clique para marcar. Use <span className="font-semibold text-slate-300">Shift</span> para selecionar em faixa.
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={selectVisibleAccounts}
+                      disabled={accounts.length === 0}
+                      className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-cyan-300 transition hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Selecionar visiveis
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearVisibleAccounts}
+                      disabled={accounts.length === 0 || selectedCount === 0}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Limpar visiveis
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 max-h-[56vh] space-y-2 overflow-y-auto pr-1">
@@ -206,14 +294,15 @@ export function ParametrizationAddButton({
                       Nenhuma conta encontrada.
                     </div>
                   ) : (
-                    accounts.map((account) => {
-                      const active = account.id === selectedAccountId;
+                    accounts.map((account, index) => {
+                      const active = selectedAccountIds.has(account.id);
+                      const selectedIndex = selectedAccounts.findIndex((item) => item.id === account.id);
 
                       return (
                         <button
                           key={account.id}
                           type="button"
-                          onClick={() => setSelectedAccountId(account.id)}
+                          onClick={(event) => toggleAccount(account, index, event)}
                           className={[
                             "w-full rounded-2xl border px-4 py-4 text-left transition",
                             active
@@ -247,8 +336,12 @@ export function ParametrizationAddButton({
                             </div>
 
                             {active && (
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-300">
-                                <Check className="h-4 w-4" />
+                              <div className="flex h-9 min-w-9 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/15 px-2 text-cyan-300">
+                                {selectedIndex >= 0 ? (
+                                  <span className="text-xs font-black">{selectedIndex + 1}</span>
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
                               </div>
                             )}
                           </div>
@@ -259,37 +352,59 @@ export function ParametrizationAddButton({
                 </div>
               </section>
 
-              <aside className="rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-5">
+              <aside className="flex min-h-0 flex-col rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-5">
                 <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
-                  Selecionada
+                  Selecionadas
                 </p>
 
-                {selectedAccount ? (
-                  <div className="mt-4 space-y-4">
+                {selectedCount > 0 ? (
+                  <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
                     <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                        Codigo
+                        Contas marcadas
                       </p>
-                      <p className="mt-2 text-lg font-black text-white">{selectedAccount.code}</p>
-                      <p className="mt-1 text-sm text-slate-400">{selectedAccount.name}</p>
+                      <p className="mt-2 text-2xl font-black text-white">{selectedCount}</p>
+                      <p className="mt-1 text-sm text-slate-400">
+                        {selectedCount === 1
+                          ? "1 conta pronta para ser vinculada."
+                          : `${selectedCount} contas prontas para serem vinculadas.`}
+                      </p>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                          Reduzido
-                        </p>
-                        <p className="mt-2 text-sm font-bold text-white">
-                          {selectedAccount.reducedCode ?? "-"}
-                        </p>
+                    {primarySelectedAccount ? (
+                      <div className="space-y-3">
+                        <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                            Primeira selecionada
+                          </p>
+                          <p className="mt-2 text-lg font-black text-white">
+                            {primarySelectedAccount.code}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-400">
+                            {primarySelectedAccount.name}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Reduzido
+                            </p>
+                            <p className="mt-2 text-sm font-bold text-white">
+                              {primarySelectedAccount.reducedCode ?? "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                              Nivel
+                            </p>
+                            <p className="mt-2 text-sm font-bold text-white">
+                              {primarySelectedAccount.level}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                          Nivel
-                        </p>
-                        <p className="mt-2 text-sm font-bold text-white">{selectedAccount.level}</p>
-                      </div>
-                    </div>
+                    ) : null}
 
                     <div className="rounded-2xl border border-white/8 bg-white/4 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -298,19 +413,55 @@ export function ParametrizationAddButton({
                       <p className="mt-2 text-sm font-bold text-cyan-300">{target}</p>
                     </div>
 
+                    <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-white/8 bg-black/10 p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                          Lista selecionada
+                        </p>
+                        <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-[0.22em] text-cyan-300">
+                          {selectedCount} item(ns)
+                        </span>
+                      </div>
+
+                      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                        {selectedAccounts.map((account) => (
+                          <div
+                            key={account.id}
+                            className="flex items-start justify-between gap-3 rounded-2xl border border-white/8 bg-white/4 px-3 py-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-white">{account.code}</p>
+                              <p className="mt-1 truncate text-sm text-slate-400">{account.name}</p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => removeSelectedAccount(account.id)}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:border-rose-400/30 hover:bg-rose-500/10 hover:text-rose-200"
+                              aria-label={`Remover ${account.code} da selecao`}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => void handleSave()}
-                      disabled={saving}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={saving || selectedCount === 0}
+                      className="sticky bottom-0 inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      Salvar mapeamento
+                      {selectedCount === 1
+                        ? "Salvar mapeamento"
+                        : `Salvar ${selectedCount} mapeamentos`}
                     </button>
                   </div>
                 ) : (
                   <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-10 text-center text-sm text-slate-500">
-                    Selecione uma conta na lista para ver os detalhes.
+                    Selecione uma ou mais contas na lista para montar o lote de mapeamento.
                   </div>
                 )}
               </aside>

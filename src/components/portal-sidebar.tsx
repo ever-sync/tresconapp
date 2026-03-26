@@ -102,6 +102,17 @@ export function PortalSidebar() {
     setCollapsed(false);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--portal-sidebar-width",
+      collapsed ? "92px" : "292px"
+    );
+
+    return () => {
+      document.documentElement.style.setProperty("--portal-sidebar-width", "292px");
+    };
+  }, [collapsed]);
+
   function handleLogout() {
     logout();
     router.push("/client-login");
@@ -110,13 +121,13 @@ export function PortalSidebar() {
   return (
     <aside
       className={cn(
-        "relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 bg-[#081325] text-slate-200 shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)] transition-all duration-300 md:sticky md:top-0 md:h-screen",
-        collapsed ? "w-[92px]" : "w-full md:w-[292px]"
+        "relative hidden shrink-0 flex-col overflow-hidden border-r border-white/5 bg-[#081325] text-slate-200 shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)] transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:fixed md:left-0 md:top-0 md:z-40 md:flex md:h-screen",
+        collapsed ? "w-full md:w-[92px]" : "w-full md:w-[292px]"
       )}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.16),transparent_30%),radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.08),transparent_24%)]" />
 
-      <div className="relative flex h-full flex-col py-5">
+      <div className="relative flex min-h-full flex-col py-5">
         <div className="flex items-center justify-between gap-3 px-4 pb-5">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#2dd4ff_0%,#1499ff_48%,#0f6dff_100%)] text-xl font-semibold text-white shadow-[0_0_30px_rgba(14,165,233,0.45)]">
@@ -157,7 +168,7 @@ export function PortalSidebar() {
           </div>
         )}
 
-        <nav className="flex-1 space-y-1 overflow-y-auto px-0">
+        <nav className="scrollbar-hidden flex-1 space-y-1 overflow-y-auto px-0">
           {mainItems.map((item) => (
             <NavLink
               key={item.href}

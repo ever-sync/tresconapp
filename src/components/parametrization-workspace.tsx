@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
 
 import {
   ParametrizationAddButton,
@@ -22,6 +22,7 @@ type CategoryCard = {
   key: string;
   title: string;
   mappedAccounts: AccountSnapshot[];
+  mappedCount: number;
   description: string;
 };
 
@@ -40,6 +41,12 @@ type DemoSection = {
   unmappedAccounts: AccountSnapshot[];
   unmappedTotalCount: number;
   derivedLines?: string[];
+};
+
+type TargetOption = {
+  groupTitle: string;
+  title: string;
+  key: string;
 };
 
 function countLabel(count: number) {
@@ -81,10 +88,14 @@ function snapshotByCode(section: DemoSection, code: string) {
 function removeCodesFromSection(section: DemoSection, codes: Set<string>) {
   const groups = section.groups.map((group) => ({
     ...group,
-    cards: group.cards.map((card) => ({
-      ...card,
-      mappedAccounts: card.mappedAccounts.filter((account) => !codes.has(account.code)),
-    })),
+    cards: group.cards.map((card) => {
+      const removedCount = card.mappedAccounts.filter((account) => codes.has(account.code)).length;
+      return {
+        ...card,
+        mappedCount: Math.max(0, card.mappedCount - removedCount),
+        mappedAccounts: card.mappedAccounts.filter((account) => !codes.has(account.code)),
+      };
+    }),
   }));
 
   return {
@@ -105,6 +116,62 @@ function appendUniqueAccounts(accounts: AccountSnapshot[], additions: AccountSna
   return result;
 }
 
+function firstTarget(section: DemoSection) {
+  return section.groups[0]?.cards[0]?.title ?? "";
+}
+
+function createResolvedTargets(section: DemoSection) {
+  const resolved = new Set<string>();
+
+  for (const group of section.groups) {
+    for (const card of group.cards) {
+      if (card.mappedCount === 0 || card.mappedAccounts.length > 0) {
+        resolved.add(card.title);
+      }
+    }
+  }
+
+  return resolved;
+}
+
+function findCardInSection(section: DemoSection, target: string) {
+  for (const group of section.groups) {
+    for (const card of group.cards) {
+      if (card.title === target) {
+        return {
+          groupTitle: group.title,
+          card,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function replaceCardAccountsInSection(
+  section: DemoSection,
+  target: string,
+  mappedAccounts: AccountSnapshot[],
+  mappedCount = mappedAccounts.length
+) {
+  return {
+    ...section,
+    groups: section.groups.map((group) => ({
+      ...group,
+      cards: group.cards.map((card) =>
+        card.title === target
+          ? {
+              ...card,
+              mappedCount,
+              mappedAccounts,
+            }
+          : card
+      ),
+    })),
+  };
+}
+
 export function ParametrizationWorkspace({
   section: initialSection,
   isOffline,
@@ -113,37 +180,195 @@ export function ParametrizationWorkspace({
   isOffline: boolean;
 }) {
   const [section, setSection] = useState(initialSection);
+  const [selectedTarget, setSelectedTarget] = useState(firstTarget(initialSection));
+  const [resolvedTargets, setResolvedTargets] = useState<Set<string>>(() =>
+    createResolvedTargets(initialSection)
+  );
+  const [loadingTarget, setLoadingTarget] = useState<string | null>(null);
+  const [searchValue, setSearchValue] = useState(firstTarget(initialSection));
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setSection(initialSection);
+    setSelectedTarget(firstTarget(initialSection));
+    setResolvedTargets(createResolvedTargets(initialSection));
+    setLoadingTarget(null);
+    setSearchValue(firstTarget(initialSection));
+    setPickerOpen(false);
   }, [initialSection]);
 
-  const unmappedCount = useMemo(
-    () => section.unmappedTotalCount || section.unmappedAccounts.length,
-    [section.unmappedAccounts.length, section.unmappedTotalCount]
+  const targetOptions = useMemo<TargetOption[]>(
+    () =>
+      section.groups.flatMap((group) =>
+        group.cards.map((card) => ({
+          groupTitle: group.title,
+          title: card.title,
+          key: card.key,
+        }))
+      ),
+    [section.groups]
   );
 
-  function handleAccountSaved(target: string, account: { code: string; reducedCode: string | null; name: string }) {
+  const selectedIndex = useMemo(
+    () => targetOptions.findIndex((option) => option.title === selectedTarget),
+    [selectedTarget, targetOptions]
+  );
+
+  const filteredTargetOptions = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+    if (!query) {
+      return targetOptions;
+    }
+
+    return targetOptions.filter((option) =>
+      `${option.groupTitle} ${option.title}`.toLowerCase().includes(query)
+    );
+  }, [searchValue, targetOptions]);
+
+  const visibleGroups = useMemo(() => {
+    return section.groups
+      .map((group) => ({
+        ...group,
+        cards: group.cards.filter((card) => card.title === selectedTarget),
+      }))
+      .filter((group) => group.cards.length > 0);
+  }, [section.groups, selectedTarget]);
+
+  const selectedCardInfo = useMemo(
+    () => findCardInSection(section, selectedTarget),
+    [section, selectedTarget]
+  );
+
+  useEffect(() => {
+    setSearchValue(selectedTarget);
+  }, [selectedTarget]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!pickerRef.current) return;
+      if (!pickerRef.current.contains(event.target as Node)) {
+        setPickerOpen(false);
+        setSearchValue(selectedTarget);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [selectedTarget]);
+
+  useEffect(() => {
+    if (!selectedTarget || isOffline || resolvedTargets.has(selectedTarget)) {
+      return;
+    }
+
+    const selectedCard = selectedCardInfo?.card;
+    if (!selectedCard) {
+      return;
+    }
+
+    if (selectedCard.mappedCount === 0) {
+      setResolvedTargets((current) => new Set([...current, selectedTarget]));
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+
+    async function loadTargetAccounts() {
+      setLoadingTarget(selectedTarget);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("kind", section.key);
+        params.set("target", selectedTarget);
+
+        const response = await fetch(`/api/parametrization/item?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Nao foi possivel carregar as contas do item");
+        }
+
+        const payload = (await response.json()) as {
+          accounts?: AccountSnapshot[];
+          total?: number;
+        };
+
+        if (!active) {
+          return;
+        }
+
+        setSection((current) =>
+          replaceCardAccountsInSection(
+            current,
+            selectedTarget,
+            payload.accounts ?? [],
+            payload.total ?? payload.accounts?.length ?? 0
+          )
+        );
+        setResolvedTargets((current) => new Set([...current, selectedTarget]));
+      } catch (err) {
+        if ((err as DOMException)?.name !== "AbortError") {
+          console.error(err);
+          if (active) {
+            setResolvedTargets((current) => new Set([...current, selectedTarget]));
+          }
+        }
+      } finally {
+        if (active) {
+          setLoadingTarget(null);
+        }
+      }
+    }
+
+    void loadTargetAccounts();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isOffline, resolvedTargets, section.key, selectedCardInfo, selectedTarget]);
+
+  function handleAccountSaved(
+    target: string,
+    account: { code: string; reducedCode: string | null; name: string }
+  ) {
     const snapshot: AccountSnapshot = {
       code: account.code,
       reducedCode: account.reducedCode,
       name: account.name,
     };
 
+    setResolvedTargets((current) => new Set([...current, target]));
     setSection((current) => {
+      const targetAlreadyHadAccount = current.groups.some((group) =>
+        group.cards.some(
+          (card) =>
+            card.title === target && card.mappedAccounts.some((item) => item.code === snapshot.code)
+        )
+      );
       const withoutCode = removeCodesFromSection(current, new Set([snapshot.code]));
+
       return {
         ...withoutCode,
         unmappedTotalCount:
           current.key === "dre"
             ? 0
-            : Math.max(0, current.unmappedTotalCount - (current.unmappedAccounts.some((item) => item.code === snapshot.code) ? 1 : 0)),
+            : Math.max(
+                0,
+                current.unmappedTotalCount -
+                  (current.unmappedAccounts.some((item) => item.code === snapshot.code) ? 1 : 0)
+              ),
         groups: withoutCode.groups.map((group) => ({
           ...group,
           cards: group.cards.map((card) => {
             if (card.title !== target) return card;
             return {
               ...card,
+              mappedCount: targetAlreadyHadAccount ? card.mappedCount : card.mappedCount + 1,
               mappedAccounts: appendUniqueAccounts(
                 card.mappedAccounts.filter((item) => item.code !== snapshot.code),
                 [snapshot]
@@ -155,7 +380,57 @@ export function ParametrizationWorkspace({
     });
   }
 
-  function handleAccountRemoved(target: string, accountCode: string) {
+  function handleAccountsSavedMany(
+    target: string,
+    accounts: { code: string; reducedCode: string | null; name: string }[]
+  ) {
+    const snapshots = Array.from(
+      new Map(
+        accounts.map((account) => [
+          account.code,
+          {
+            code: account.code,
+            reducedCode: account.reducedCode,
+            name: account.name,
+          } satisfies AccountSnapshot,
+        ])
+      ).values()
+    );
+
+    if (snapshots.length === 0) {
+      return;
+    }
+
+    const codeSet = new Set(snapshots.map((account) => account.code));
+
+    setResolvedTargets((current) => new Set([...current, target]));
+    setSection((current) => {
+      const withoutCodes = removeCodesFromSection(current, codeSet);
+      const movedFromUnmapped = current.unmappedAccounts.filter((account) => codeSet.has(account.code)).length;
+
+      return {
+        ...withoutCodes,
+        unmappedTotalCount:
+          current.key === "dre"
+            ? 0
+            : Math.max(0, current.unmappedTotalCount - movedFromUnmapped),
+        groups: withoutCodes.groups.map((group) => ({
+          ...group,
+          cards: group.cards.map((card) => {
+            if (card.title !== target) return card;
+
+            return {
+              ...card,
+              mappedCount: card.mappedCount + snapshots.length,
+              mappedAccounts: appendUniqueAccounts(card.mappedAccounts, snapshots),
+            };
+          }),
+        })),
+      };
+    });
+  }
+
+  function handleAccountRemoved(accountCode: string) {
     setSection((current) => {
       const removed = snapshotByCode(current, accountCode);
       const withoutCode = removeCodesFromSection(current, new Set([accountCode]));
@@ -168,21 +443,11 @@ export function ParametrizationWorkspace({
         ...withoutCode,
         unmappedTotalCount: current.key === "dre" ? 0 : current.unmappedTotalCount + 1,
         unmappedAccounts: appendUniqueAccounts(withoutCode.unmappedAccounts, [removed]),
-        groups: withoutCode.groups.map((group) => ({
-          ...group,
-          cards: group.cards.map((card) => ({
-            ...card,
-            mappedAccounts:
-              card.title === target
-                ? card.mappedAccounts.filter((item) => item.code !== accountCode)
-                : card.mappedAccounts,
-          })),
-        })),
       };
     });
   }
 
-  function handleAccountsRemovedMany(target: string, accountCodes: string[]) {
+  function handleAccountsRemovedMany(accountCodes: string[]) {
     const codeSet = new Set(accountCodes);
 
     setSection((current) => {
@@ -196,16 +461,6 @@ export function ParametrizationWorkspace({
         unmappedTotalCount:
           current.key === "dre" ? 0 : current.unmappedTotalCount + removedSnapshots.length,
         unmappedAccounts: appendUniqueAccounts(withoutCodes.unmappedAccounts, removedSnapshots),
-        groups: withoutCodes.groups.map((group) => ({
-          ...group,
-          cards: group.cards.map((card) => ({
-            ...card,
-            mappedAccounts:
-              card.title === target
-                ? card.mappedAccounts.filter((item) => !codeSet.has(item.code))
-                : card.mappedAccounts,
-          })),
-        })),
       };
     });
   }
@@ -219,8 +474,128 @@ export function ParametrizationWorkspace({
       )}
     >
       <div className="px-5 py-5">
+        <div className="sticky top-[92px] z-20 mb-5 rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(8,17,30,0.96),rgba(9,18,32,0.92))] p-4 backdrop-blur lg:top-[122px]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div ref={pickerRef} className="relative block">
+              <span className="mb-2 block text-xs font-black uppercase tracking-[0.28em] text-slate-500">
+                Item para configurar
+              </span>
+              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0f1a2b] px-4 py-3 text-slate-400 transition focus-within:border-cyan-400/30">
+                <Search className="h-4 w-4 shrink-0" />
+                <input
+                  value={searchValue}
+                  onChange={(event) => {
+                    setSearchValue(event.target.value);
+                    setPickerOpen(true);
+                  }}
+                  onFocus={() => setPickerOpen(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      setPickerOpen(false);
+                      setSearchValue(selectedTarget);
+                    }
+                    if (event.key === "Enter" && filteredTargetOptions.length > 0) {
+                      event.preventDefault();
+                      setSelectedTarget(filteredTargetOptions[0].title);
+                      setSearchValue(filteredTargetOptions[0].title);
+                      setPickerOpen(false);
+                    }
+                  }}
+                  placeholder="Buscar item da parametrizacao..."
+                  className="w-full bg-transparent text-sm font-semibold text-slate-100 outline-none placeholder:text-slate-500"
+                />
+              </div>
+
+              {pickerOpen && (
+                <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-white/10 bg-[#0d1728] shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+                  <div className="max-h-80 overflow-y-auto p-2">
+                    {filteredTargetOptions.length === 0 ? (
+                      <div className="rounded-xl px-3 py-4 text-sm text-slate-500">
+                        Nenhum item encontrado.
+                      </div>
+                    ) : (
+                      filteredTargetOptions.map((option) => {
+                        const active = option.title === selectedTarget;
+                        return (
+                          <button
+                            key={`${option.groupTitle}-${option.key}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTarget(option.title);
+                              setSearchValue(option.title);
+                              setPickerOpen(false);
+                            }}
+                            aria-current={active ? "true" : undefined}
+                            className={cn(
+                              "flex w-full items-start justify-between gap-3 rounded-xl border px-3 py-3 text-left transition",
+                              active
+                                ? "border-cyan-400/25 bg-cyan-500/10 text-cyan-300 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+                                : "border-transparent text-slate-300 hover:border-white/8 hover:bg-white/5 hover:text-white"
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="truncate text-sm font-bold">{option.title}</div>
+                                {active ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-500/12 px-2 py-0.5 text-[0.6rem] font-black uppercase tracking-[0.24em] text-cyan-300">
+                                    <Check className="h-3 w-3" />
+                                    Atual
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="mt-1 text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                                {option.groupTitle}
+                              </div>
+                            </div>
+                            {active ? (
+                              <div className="mt-0.5 h-8 w-1 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.45)]" />
+                            ) : null}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  selectedIndex > 0 && setSelectedTarget(targetOptions[selectedIndex - 1].title)
+                }
+                disabled={selectedIndex <= 0}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  selectedIndex >= 0 &&
+                  selectedIndex < targetOptions.length - 1 &&
+                  setSelectedTarget(targetOptions[selectedIndex + 1].title)
+                }
+                disabled={selectedIndex < 0 || selectedIndex >= targetOptions.length - 1}
+                className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-xs font-bold uppercase tracking-[0.22em] text-cyan-300 transition hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Proximo
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-start rounded-2xl border border-white/8 bg-black/10 px-4 py-3 text-sm text-slate-400 lg:justify-end">
+            {selectedIndex >= 0 ? `${selectedIndex + 1} de ${targetOptions.length}` : "Sem itens"}
+          </div>
+        </div>
+        </div>
+
         <div className="space-y-5">
-          {section.groups.map((group, index) => (
+          {visibleGroups.map((group, index) => (
             <div key={group.title} className="rounded-[1.5rem] border border-white/8 bg-white/3 p-4">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
@@ -237,124 +612,92 @@ export function ParametrizationWorkspace({
                     resolveSectionColor(index)
                   )}
                 >
-                  {group.cards.length} itens
+                  {group.cards.length} item
                 </span>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-2">
-                {group.cards.map((card) => (
-                  <article
-                    key={card.key}
-                    className="rounded-[1.4rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-extrabold text-white">{groupCardTitle(card.title)}</h3>
-                        <p className="mt-1 text-xs text-slate-500">{countLabel(card.mappedAccounts.length)}</p>
+              <div className="grid gap-4">
+                {group.cards.map((card) => {
+                  const isLoadingCard =
+                    loadingTarget === card.title && card.mappedCount > 0 && card.mappedAccounts.length === 0;
+
+                  return (
+                    <article
+                      key={card.key}
+                      className="rounded-[1.4rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-extrabold text-white">
+                            {groupCardTitle(card.title)}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-500">{countLabel(card.mappedCount)}</p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <span className="inline-flex min-w-[3.25rem] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.24em] text-cyan-300">
+                            {card.mappedCount}
+                          </span>
+                          <ParametrizationAddButton
+                            kind={section.key}
+                            target={card.title}
+                            disabled={isOffline}
+                            onSaved={(account) => handleAccountSaved(card.title, account)}
+                            onSavedMany={(accounts) => handleAccountsSavedMany(card.title, accounts)}
+                          />
+                          <ParametrizationRemoveManyButton
+                            kind={section.key}
+                            target={card.title}
+                            accountCodes={card.mappedAccounts.map((account) => account.code)}
+                            disabled={isOffline || card.mappedAccounts.length === 0}
+                            onRemovedMany={(codes) => handleAccountsRemovedMany(codes)}
+                          />
+                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <ParametrizationAddButton
-                          kind={section.key}
-                          target={card.title}
-                          disabled={isOffline}
-                          onSaved={(account) => handleAccountSaved(card.title, account)}
-                        />
-                        <ParametrizationRemoveManyButton
-                          kind={section.key}
-                          target={card.title}
-                          accountCodes={card.mappedAccounts.map((account) => account.code)}
-                          disabled={isOffline || card.mappedAccounts.length === 0}
-                          onRemovedMany={(codes) => handleAccountsRemovedMany(card.title, codes)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-2xl border border-white/6 bg-black/10 p-4">
-                      <div className="space-y-3">
-                        {card.mappedAccounts.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-slate-500">
-                            Nenhuma conta configurada nessa categoria.
-                          </div>
-                        ) : (
-                          card.mappedAccounts.map((account) => (
-                            <div
-                              key={`${account.code}-${account.name}`}
-                              className="rounded-[1.1rem] border border-white/8 bg-[#0b1525] px-4 py-3"
-                            >
-                              <div className="mb-2 text-[0.58rem] font-black uppercase tracking-[0.32em] text-slate-500">
-                                Conta
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <div className="flex-1 rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3 text-sm text-slate-100">
-                                  {formatListLabel(account)}
-                                </div>
-                                <ParametrizationRemoveButton
-                                  kind={section.key}
-                                  target={card.title}
-                                  accountCode={account.code}
-                                  onRemoved={(code) => handleAccountRemoved(card.title, code)}
-                                />
-                              </div>
+                      <div className="mt-4 rounded-2xl border border-white/6 bg-black/10 p-4">
+                        <div className="space-y-3">
+                          {isLoadingCard ? (
+                            <div className="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-8 text-sm text-slate-500">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Carregando as contas deste item...
                             </div>
-                          ))
-                        )}
+                          ) : card.mappedAccounts.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-slate-500">
+                              Nenhuma conta configurada nessa categoria.
+                            </div>
+                          ) : (
+                            card.mappedAccounts.map((account) => (
+                              <div
+                                key={`${account.code}-${account.name}`}
+                                className="rounded-[1.1rem] border border-white/8 bg-[#0b1525] px-4 py-3"
+                              >
+                                <div className="mb-2 text-[0.58rem] font-black uppercase tracking-[0.32em] text-slate-500">
+                                  Conta
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-1 rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3 text-sm text-slate-100">
+                                    {formatListLabel(account)}
+                                  </div>
+                                  <ParametrizationRemoveButton
+                                    kind={section.key}
+                                    target={card.title}
+                                    accountCode={account.code}
+                                    onRemoved={(code) => handleAccountRemoved(code)}
+                                  />
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             </div>
           ))}
         </div>
-
-        {section.key !== "dre" && (
-          <div className="mt-6 rounded-[1.6rem] border border-amber-500/20 bg-[linear-gradient(180deg,rgba(42,35,20,0.96),rgba(32,26,16,0.92))] p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-black uppercase tracking-[0.28em] text-amber-300">
-                  Contas nao mapeadas ({unmappedCount})
-                </p>
-                <p className="mt-1 text-xs text-amber-100/60">
-                  Exibindo uma amostra inicial para manter a tela mais leve.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-amber-200 transition hover:bg-amber-500/15"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Revisar lista
-              </button>
-            </div>
-
-            <div className="max-h-64 overflow-auto rounded-2xl border border-white/6 bg-black/20 p-4">
-              <div className="space-y-3">
-                {section.unmappedAccounts.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-slate-500">
-                    Nenhuma conta configurada nessa categoria.
-                  </div>
-                ) : (
-                  section.unmappedAccounts.map((account) => (
-                    <div
-                      key={`${account.code}-${account.name}`}
-                      className="rounded-[1.1rem] border border-white/8 bg-[#0b1525] px-4 py-3"
-                    >
-                      <div className="mb-2 text-[0.58rem] font-black uppercase tracking-[0.32em] text-slate-500">
-                        Conta
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3 text-sm text-slate-100">
-                          {formatListLabel(account)}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {section.derivedLines && (
           <div className="mt-6 rounded-[1.6rem] border border-white/8 bg-white/4 p-4">

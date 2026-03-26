@@ -222,6 +222,17 @@ export function StaffSidebar() {
     }
   }, [configActive]);
 
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--staff-sidebar-width",
+      collapsed ? "92px" : "292px"
+    );
+
+    return () => {
+      document.documentElement.style.setProperty("--staff-sidebar-width", "292px");
+    };
+  }, [collapsed]);
+
   function handleLogout() {
     logout();
     router.push("/login");
@@ -230,13 +241,13 @@ export function StaffSidebar() {
   return (
     <aside
       className={cn(
-        "relative flex shrink-0 flex-col overflow-hidden border-r border-white/5 bg-[#091326] text-slate-200 shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)] transition-all duration-300 md:sticky md:top-0 md:h-screen",
-        collapsed ? "w-[92px]" : "w-full md:w-[292px]"
+        "scrollbar-hidden relative hidden shrink-0 flex-col overflow-hidden border-r border-white/5 bg-[#091326] text-slate-200 shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)] transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:fixed md:left-0 md:top-0 md:z-40 md:flex md:h-screen md:overflow-y-auto",
+        collapsed ? "w-full md:w-[92px]" : "w-full md:w-[292px]"
       )}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_28%),radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.08),transparent_22%)]" />
 
-      <div className="relative flex h-full flex-col px-4 py-5">
+      <div className="relative flex min-h-full flex-col px-4 py-5">
         <div className="relative mb-8 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#36c2ff_0%,#1397ff_50%,#1678ff_100%)] text-2xl font-semibold text-white shadow-[0_0_34px_rgba(14,165,233,0.48)]">

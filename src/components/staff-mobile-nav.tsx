@@ -1,0 +1,59 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  BookText,
+  FileText,
+  LayoutDashboard,
+  Settings2,
+  Users2,
+} from "lucide-react";
+
+import { cn } from "@/lib/utils";
+
+const items = [
+  { href: "/dashboard", label: "Inicio", icon: LayoutDashboard },
+  { href: "/dashboard/clientes", label: "Clientes", icon: Users2 },
+  { href: "/dashboard/plano-de-contas", label: "Plano", icon: BookText },
+  { href: "/dashboard/parametrizacao", label: "Param.", icon: Settings2 },
+  { href: "/dashboard/documentos", label: "Docs", icon: FileText },
+];
+
+function isActivePath(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function StaffMobileNav() {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      className="fixed inset-x-0 bottom-0 z-[60] border-t border-white/10 bg-[linear-gradient(180deg,rgba(8,19,37,0.98),rgba(7,16,28,0.98))] px-2 pt-2 shadow-[0_-18px_40px_rgba(0,0,0,0.28)] backdrop-blur md:hidden"
+      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+    >
+      <div className="grid grid-cols-5 gap-1">
+        {items.map((item) => {
+          const active = isActivePath(pathname, item.href);
+          const Icon = item.icon;
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[0.68rem] font-bold transition",
+                active
+                  ? "bg-cyan-500/12 text-cyan-300"
+                  : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
+              )}
+            >
+              <Icon className={cn("h-5 w-5", active ? "text-cyan-300" : "text-slate-500")} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}

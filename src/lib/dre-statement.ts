@@ -226,20 +226,6 @@ function createCategoryBuckets(): Record<DreCategoryKey, number[]> {
   }, {} as Record<DreCategoryKey, number[]>);
 }
 
-function sumSeries(series: number[][]): number[] {
-  const result = createZeroSeries();
-  for (const values of series) {
-    for (let index = 0; index < 12; index += 1) {
-      result[index] += values[index] ?? 0;
-    }
-  }
-  return result;
-}
-
-function absSeries(values: number[]): number[] {
-  return values.map((value) => Math.abs(value));
-}
-
 function negativeSeries(values: number[]): number[] {
   return values.map((value) => -Math.abs(value));
 }

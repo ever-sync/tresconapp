@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Eye, FileText, Filter, Search, UploadCloud, X } from "lucide-react";
 
@@ -526,11 +527,16 @@ export function ClientDocumentsManager() {
                 <div className="mt-5 overflow-hidden rounded-[1.25rem] border border-white/8 bg-black/20">
                   {selectedDocument && isPreviewableMimeType(selectedDocument.mimeType) ? (
                     selectedDocument.mimeType.startsWith("image/") ? (
-                      <img
-                        src={selectedPreviewUrl ?? ""}
-                        alt={selectedDocument.title}
-                        className="max-h-[420px] w-full object-contain"
-                      />
+                      <div className="relative h-[420px] w-full">
+                        <Image
+                          src={selectedPreviewUrl ?? ""}
+                          alt={selectedDocument.title}
+                          fill
+                          unoptimized
+                          sizes="(max-width: 1024px) 100vw, 768px"
+                          className="object-contain"
+                        />
+                      </div>
                     ) : (
                       <iframe
                         src={selectedPreviewUrl ?? ""}

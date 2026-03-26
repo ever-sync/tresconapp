@@ -24,6 +24,7 @@ import {
   type DfcMovementLike,
   type DfcStatementResult,
 } from "@/lib/dfc-statement";
+import { getCanonicalDfcLineKey } from "@/lib/dfc-lines";
 
 export type StatementType = "dre" | "patrimonial" | "dfc";
 export type SnapshotStatus = "ready" | "partial" | "failed";
@@ -507,7 +508,28 @@ async function loadDfcMappings(accountingId: string, clientId: string) {
     }),
   ]);
 
-  return [...globalMappings, ...clientMappings];
+  return Array.from(
+    new Map(
+      [...globalMappings, ...clientMappings].map((mapping) => {
+        const normalized = {
+          ...mapping,
+          line_key: getCanonicalDfcLineKey(mapping.line_key),
+        };
+
+        return [
+          [
+            normalized.line_key,
+            normalized.account_code_snapshot,
+            normalized.reduced_code_snapshot ?? "",
+            normalized.source_type,
+            normalized.multiplier,
+            normalized.include_children ? "1" : "0",
+          ].join("::"),
+          normalized,
+        ];
+      })
+    ).values()
+  );
 }
 
 async function loadMovements(clientId: string, year: number, type: "dre" | "patrimonial") {

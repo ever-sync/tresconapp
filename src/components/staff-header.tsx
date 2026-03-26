@@ -30,8 +30,8 @@ export function StaffHeader() {
   }, [pathname]);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/8 bg-[linear-gradient(180deg,rgba(8,19,37,0.96),rgba(9,20,38,0.92))] backdrop-blur">
-      <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+    <header className="sticky top-0 z-30 border-b border-white/8 bg-[linear-gradient(180deg,rgba(8,19,37,0.96),rgba(9,20,38,0.92))] backdrop-blur md:fixed md:left-[var(--staff-sidebar-width)] md:right-0 md:top-0 md:z-50">
+      <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6 md:h-[106px]">
         <div>
           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.38em] text-cyan-300/70">
             Contabilidade

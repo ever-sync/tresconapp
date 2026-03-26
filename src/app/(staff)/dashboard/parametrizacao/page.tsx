@@ -25,6 +25,7 @@ type CategoryCard = {
   key: string;
   title: string;
   mappedAccounts: AccountSnapshot[];
+  mappedCount: number;
   description: string;
 };
 
@@ -240,6 +241,7 @@ function normalizeText(value: string) {
 
 function buildGroupedCards(
   groups: Array<[string, string[]]>,
+  countsByCategory: Map<string, number>,
   accountsByCategory: Map<string, AccountSnapshot[]>,
   description: string
 ): GroupSection[] {
@@ -248,6 +250,7 @@ function buildGroupedCards(
     cards: items.map((item) => ({
       key: normalizeText(item),
       title: item,
+      mappedCount: countsByCategory.get(normalizeText(item)) ?? 0,
       mappedAccounts: accountsByCategory.get(normalizeText(item)) ?? [],
       description,
     })),
@@ -270,10 +273,20 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function firstTargetOf(groups: Array<[string, string[]]>) {
+  return groups[0]?.[1]?.[0] ?? "";
+}
+
 export default async function ParametrizacaoPage({ searchParams }: ParametrizacaoPageProps) {
   const auth = await requireStaff();
   const resolvedSearchParams = (await searchParams) ?? {};
   const selectedTab = normalizeDemoKey(resolvedSearchParams.tab);
+  const initialTarget =
+    selectedTab === "dre"
+      ? firstTargetOf(DRE_GROUPS)
+      : selectedTab === "patrimonial"
+        ? firstTargetOf(PATRIMONIAL_GROUPS)
+        : firstTargetOf(DFC_GROUPS);
 
   let loadError: string | null = null;
   let mappedChartAccounts: ChartAccountRow[] = [];
@@ -282,23 +295,42 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
   let dfcLineMappings: DfcLineMappingRow[] = [];
   let unmappedPreviewAccounts: ChartAccountRow[] = [];
   let unmappedTotalCount = 0;
+  let mappedCountsByTarget = new Map<string, number>();
 
   try {
     if (selectedTab === "dre") {
-      dreMappings = await prisma.dREMapping.findMany({
-        where: {
-          accounting_id: auth.accountingId,
-          client_id: null,
-        },
-        select: {
-          account_code: true,
-          account_name: true,
-          category: true,
-        },
-        orderBy: [{ category: "asc" }, { account_code: "asc" }],
-      });
+      const [dreCounts, initialMappings] = await Promise.all([
+        prisma.dREMapping.groupBy({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+          },
+          by: ["category"],
+          _count: {
+            _all: true,
+          },
+        }),
+        prisma.dREMapping.findMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            category: initialTarget,
+          },
+          select: {
+            account_code: true,
+            account_name: true,
+            category: true,
+          },
+          orderBy: [{ account_code: "asc" }],
+        }),
+      ]);
 
-      const dreCodes = uniqueStrings(dreMappings.map((mapping) => mapping.account_code));
+      mappedCountsByTarget = new Map(
+        dreCounts.map((group) => [normalizeText(group.category), group._count._all])
+      );
+      dreMappings = initialMappings;
+
+      const dreCodes = uniqueStrings(initialMappings.map((mapping) => mapping.account_code));
       if (dreCodes.length > 0) {
         mappedChartAccounts = await prisma.chartOfAccounts.findMany({
           where: {
@@ -318,20 +350,38 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
         });
       }
     } else if (selectedTab === "patrimonial") {
-      patrimonialMappings = await prisma.patrimonialMapping.findMany({
-        where: {
-          accounting_id: auth.accountingId,
-          client_id: null,
-        },
-        select: {
-          account_code: true,
-          account_name: true,
-          category: true,
-        },
-        orderBy: [{ category: "asc" }, { account_code: "asc" }],
-      });
+      const [patrimonialCounts, initialMappings] = await Promise.all([
+        prisma.patrimonialMapping.groupBy({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+          },
+          by: ["category"],
+          _count: {
+            _all: true,
+          },
+        }),
+        prisma.patrimonialMapping.findMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            category: initialTarget,
+          },
+          select: {
+            account_code: true,
+            account_name: true,
+            category: true,
+          },
+          orderBy: [{ account_code: "asc" }],
+        }),
+      ]);
 
-      const mappedCodes = uniqueStrings(patrimonialMappings.map((mapping) => mapping.account_code));
+      mappedCountsByTarget = new Map(
+        patrimonialCounts.map((group) => [normalizeText(group.category), group._count._all])
+      );
+      patrimonialMappings = initialMappings;
+
+      const mappedCodes = uniqueStrings(initialMappings.map((mapping) => mapping.account_code));
       const unmappedWhere =
         mappedCodes.length > 0
           ? {
@@ -380,21 +430,39 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
         prisma.chartOfAccounts.count({ where: unmappedWhere }),
       ]);
     } else {
-      dfcLineMappings = await prisma.dFCLineMapping.findMany({
-        where: {
-          accounting_id: auth.accountingId,
-          client_id: null,
-        },
-        select: {
-          line_key: true,
-          chart_account_id: true,
-          account_code_snapshot: true,
-          reduced_code_snapshot: true,
-        },
-        orderBy: [{ line_key: "asc" }, { account_code_snapshot: "asc" }],
-      });
+      const [dfcCounts, initialMappings] = await Promise.all([
+        prisma.dFCLineMapping.groupBy({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+          },
+          by: ["line_key"],
+          _count: {
+            _all: true,
+          },
+        }),
+        prisma.dFCLineMapping.findMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            line_key: initialTarget,
+          },
+          select: {
+            line_key: true,
+            chart_account_id: true,
+            account_code_snapshot: true,
+            reduced_code_snapshot: true,
+          },
+          orderBy: [{ account_code_snapshot: "asc" }],
+        }),
+      ]);
 
-      const mappedIds = uniqueStrings(dfcLineMappings.map((mapping) => mapping.chart_account_id));
+      mappedCountsByTarget = new Map(
+        dfcCounts.map((group) => [normalizeText(group.line_key), group._count._all])
+      );
+      dfcLineMappings = initialMappings;
+
+      const mappedIds = uniqueStrings(initialMappings.map((mapping) => mapping.chart_account_id));
       const unmappedWhere =
         mappedIds.length > 0
           ? {
@@ -447,11 +515,30 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
     console.error("[parametrizacao] failed to load reference data", err);
     const snapshot = parametrizationCache as ParametrizationCacheSnapshot;
     mappedChartAccounts = snapshot.chartAccounts ?? [];
-    dreMappings = selectedTab === "dre" ? snapshot.dreMappings ?? [] : [];
+    dreMappings =
+      selectedTab === "dre"
+        ? (snapshot.dreMappings ?? []).filter((mapping) => mapping.category === initialTarget)
+        : [];
     patrimonialMappings = [];
-    dfcLineMappings = selectedTab === "dfc" ? snapshot.dfcLineMappings ?? [] : [];
+    dfcLineMappings =
+      selectedTab === "dfc"
+        ? (snapshot.dfcLineMappings ?? []).filter((mapping) => mapping.line_key === initialTarget)
+        : [];
     unmappedPreviewAccounts = selectedTab === "dre" ? [] : (snapshot.chartAccounts ?? []).slice(0, UNMAPPED_PREVIEW_LIMIT);
     unmappedTotalCount = selectedTab === "dre" ? 0 : (snapshot.chartAccounts ?? []).length;
+    if (selectedTab === "dre") {
+      mappedCountsByTarget = (snapshot.dreMappings ?? []).reduce((acc, mapping) => {
+        const key = normalizeText(mapping.category);
+        acc.set(key, (acc.get(key) ?? 0) + 1);
+        return acc;
+      }, new Map<string, number>());
+    } else if (selectedTab === "dfc") {
+      mappedCountsByTarget = (snapshot.dfcLineMappings ?? []).reduce((acc, mapping) => {
+        const key = normalizeText(mapping.line_key);
+        acc.set(key, (acc.get(key) ?? 0) + 1);
+        return acc;
+      }, new Map<string, number>());
+    }
     loadError =
       "Nao foi possivel carregar o banco agora. A tela esta usando a copia local da parametrizacao da Coca-Cola.";
   }
@@ -487,6 +574,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
       tone: "border-cyan-400/20",
       groups: buildGroupedCards(
         DRE_GROUPS,
+        mappedCountsByTarget,
         dreMappingsByCategory,
         "Ajuste o DE-PARA desta linha para consolidar o demonstrativo."
       ),
@@ -517,6 +605,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
       tone: "border-sky-400/20",
       groups: buildGroupedCards(
         PATRIMONIAL_GROUPS,
+        mappedCountsByTarget,
         mappingsByCategory,
         "Ajuste o DE-PARA desta linha para consolidar o balanco."
       ),
@@ -547,6 +636,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
       tone: "border-blue-400/20",
       groups: buildGroupedCards(
         DFC_GROUPS,
+        mappedCountsByTarget,
         mappingsByLine,
         "Defina a linha do fluxo de caixa e mantenha a consolidacao padronizada."
       ),

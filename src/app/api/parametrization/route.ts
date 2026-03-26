@@ -13,6 +13,7 @@ export const preferredRegion = "iad1";
 
 const actionSchema = z.enum([
   "add-mapping",
+  "add-mappings",
   "remove-mapping",
   "remove-mappings",
   "import-base",
@@ -371,6 +372,116 @@ export async function POST(request: NextRequest) {
           account_name: chartAccount.name,
           category,
         },
+        mappingVersion,
+      });
+    }
+
+    if (body.action === "add-mappings") {
+      if (!body.target || !body.accountCodes?.length) {
+        return error("Contas e destino sao obrigatorios", 400);
+      }
+
+      const requestedCodes = [...new Set(body.accountCodes.map((code) => code.trim()).filter(Boolean))];
+      if (requestedCodes.length === 0) {
+        return error("Contas e destino sao obrigatorios", 400);
+      }
+
+      const chartAccounts = await prisma.chartOfAccounts.findMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: null,
+          OR: requestedCodes.flatMap((code) => [{ code }, { reduced_code: code }]),
+        },
+      });
+
+      if (chartAccounts.length === 0) {
+        return error("Nenhuma conta encontrada para o lote informado", 404);
+      }
+
+      if (body.kind === "dfc") {
+        const chartAccountIds = [...new Set(chartAccounts.map((account) => account.id))];
+
+        await prisma.dFCLineMapping.deleteMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            line_key: body.target,
+            chart_account_id: { in: chartAccountIds },
+          },
+        });
+
+        await prisma.dFCLineMapping.createMany({
+          data: chartAccounts.map((account) => ({
+            accounting_id: auth.accountingId,
+            client_id: null,
+            line_key: body.target!,
+            chart_account_id: account.id,
+            account_code_snapshot: account.code,
+            reduced_code_snapshot: account.reduced_code,
+            source_type: account.report_type ?? "manual",
+            multiplier: 1,
+            include_children: true,
+          })),
+        });
+
+        await recomputeChartAccountsState(auth.accountingId, chartAccountIds);
+        const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+
+        return success({
+          inserted: chartAccounts.length,
+          mappingVersion,
+        });
+      }
+
+      const category = body.target;
+      const accountCodes = [...new Set(chartAccounts.map((account) => account.code))];
+
+      if (body.kind === "dre") {
+        await prisma.dREMapping.deleteMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            account_code: { in: accountCodes },
+          },
+        });
+
+        await prisma.dREMapping.createMany({
+          data: chartAccounts.map((account) => ({
+            accounting_id: auth.accountingId,
+            client_id: null,
+            account_code: account.code,
+            account_name: account.name,
+            category,
+          })),
+        });
+      } else {
+        await prisma.patrimonialMapping.deleteMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            account_code: { in: accountCodes },
+          },
+        });
+
+        await prisma.patrimonialMapping.createMany({
+          data: chartAccounts.map((account) => ({
+            accounting_id: auth.accountingId,
+            client_id: null,
+            account_code: account.code,
+            account_name: account.name,
+            category,
+          })),
+        });
+      }
+
+      await recomputeChartAccountsState(
+        auth.accountingId,
+        chartAccounts.map((account) => account.id)
+      );
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+
+      return success({
+        inserted: chartAccounts.length,
         mappingVersion,
       });
     }

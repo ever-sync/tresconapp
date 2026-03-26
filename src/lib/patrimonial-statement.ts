@@ -166,14 +166,6 @@ const SECTION_KEYS: PatrimonialSectionKey[] = [
   "patrimonio_liquido",
 ];
 
-const SECTION_LABELS: Record<PatrimonialSectionKey, string> = {
-  ativo_circulante: "Ativo Circulante",
-  ativo_nao_circulante: "Ativo Nao Circulante",
-  passivo_circulante: "Passivo Circulante",
-  passivo_nao_circulante: "Passivo Nao Circulante",
-  patrimonio_liquido: "Patrimonio Liquido",
-};
-
 const CATEGORY_TO_SECTION: Record<PatrimonialCategoryKey, PatrimonialSectionKey> = {
   disponivel: "ativo_circulante",
   clientes: "ativo_circulante",
@@ -364,23 +356,8 @@ function createSeriesRecord<T extends string>(keys: readonly T[]): Record<T, num
   }, {} as Record<T, number[]>);
 }
 
-function sumSeries(series: number[][]): number[] {
-  const result = createZeroSeries();
-  for (const values of series) {
-    for (let index = 0; index < 12; index += 1) {
-      result[index] += values[index] ?? 0;
-    }
-  }
-  return result;
-}
-
 function seriesTotal(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
-}
-
-function safeDivide(numerator: number, denominator: number): number {
-  if (!denominator) return 0;
-  return numerator / denominator;
 }
 
 function buildLookup<T extends { code: string }>(items: T[]): Map<string, T> {

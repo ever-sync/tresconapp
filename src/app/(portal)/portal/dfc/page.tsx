@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -22,6 +22,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 
+import { uploadFormDataWithProgress } from "@/lib/upload-request";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "lista" | "graficos" | "fechado";
@@ -148,51 +149,45 @@ export default function DfcPage() {
   const [month, setMonth] = useState("Jan");
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [valuesMode, setValuesMode] = useState<"monthly" | "accumulated">("monthly");
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [data, setData] = useState<DfcResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const loadSummary = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const monthIndex = MONTHS.indexOf(month) + 1;
+      const response = await fetch(`/api/dfc/summary?year=${year}&month=${monthIndex}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || "Nao foi possivel carregar o DFC");
+      }
+
+      const payload = (await response.json()) as DfcResponse;
+      setData(payload);
+      setYear(String(payload.year));
+      setMonth(payload.monthLabels[payload.activeMonthIndex] ?? month);
+    } catch (err) {
+      setData(null);
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar o DFC");
+    } finally {
+      setLoading(false);
+    }
+  }, [month, year]);
 
   useEffect(() => {
-    let active = true;
-
-    async function loadSummary() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const monthIndex = MONTHS.indexOf(month) + 1;
-        const response = await fetch(`/api/dfc/summary?year=${year}&month=${monthIndex}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(payload.error || "Nao foi possivel carregar o DFC");
-        }
-
-        const payload = (await response.json()) as DfcResponse;
-        if (active) {
-          setData(payload);
-          setYear(String(payload.year));
-          setMonth(payload.monthLabels[payload.activeMonthIndex] ?? month);
-        }
-      } catch (err) {
-        if (active) {
-          setData(null);
-          setError(err instanceof Error ? err.message : "Nao foi possivel carregar o DFC");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
     void loadSummary();
-
-    return () => {
-      active = false;
-    };
-  }, [month, year]);
+  }, [loadSummary]);
 
   const monthLabels = data?.monthLabels ?? MONTHS;
   const listRows = data?.rows ?? EMPTY_ROWS;
@@ -226,6 +221,44 @@ export default function DfcPage() {
     ].filter(Boolean) as Array<{ label: string; value: number }>;
   }, [cards]);
 
+  async function handleUpload() {
+    if (!selectedFile) {
+      window.alert("Selecione uma planilha XLSX para enviar.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", selectedFile);
+      formData.set("year", year);
+      formData.set("valuesMode", valuesMode);
+
+      const payload = await uploadFormDataWithProgress<{
+        imported: number;
+        year: number;
+        valuesMode: string;
+      }>("/api/client/dfc/import", formData, setUploadProgress);
+
+      setUploadMessage(
+        `${payload.imported} linha(s) importadas para ${payload.year} em modo ${payload.valuesMode === "accumulated" ? "acumulado" : "mensal"}.`
+      );
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      await loadSummary();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Falha ao importar o DFC");
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
+  }
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -242,16 +275,30 @@ export default function DfcPage() {
             </p>
           </div>
 
-          <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[300px_150px_150px_auto]">
+          <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[300px_150px_150px_120px_auto]">
             <div>
               <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
                 Planilha
               </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(event) => {
+                  const nextFile = event.target.files?.[0] ?? null;
+                  setSelectedFile(nextFile);
+                  setUploadMessage(null);
+                }}
+              />
               <button
                 type="button"
+                onClick={() => fileInputRef.current?.click()}
                 className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10"
               >
-                <span>Selecionar planilha</span>
+                <span className="truncate">
+                  {selectedFile?.name ?? "Selecionar planilha XLSX"}
+                </span>
                 <FileUp className="h-4 w-4 text-slate-400" />
               </button>
             </div>
@@ -275,6 +322,24 @@ export default function DfcPage() {
 
             <div>
               <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                Modo
+              </p>
+              <select
+                value={valuesMode}
+                onChange={(event) => setValuesMode(event.target.value === "accumulated" ? "accumulated" : "monthly")}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+              >
+                <option value="monthly" className="bg-slate-900">
+                  Mensal
+                </option>
+                <option value="accumulated" className="bg-slate-900">
+                  Acumulado
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
                 Ano
               </p>
               <input
@@ -286,16 +351,43 @@ export default function DfcPage() {
 
             <button
               type="button"
+              onClick={() => void handleUpload()}
+              disabled={uploading}
               className="flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
             >
-              <UploadCloud className="h-4 w-4" />
-              Enviar
+              {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              {uploading ? "Enviando..." : "Enviar"}
             </button>
           </div>
         </div>
 
-        <div className="mt-6 rounded-[1.5rem] border border-dashed border-white/10 bg-black/10 px-6 py-10 text-center text-slate-500">
-          Nenhum balancete enviado ainda.
+        <div className="mt-6 space-y-3">
+          {uploadProgress !== null && (
+            <div className="rounded-[1.5rem] border border-cyan-400/15 bg-cyan-500/8 px-5 py-4">
+              <div className="flex items-center justify-between gap-3 text-sm text-cyan-200">
+                <span>Progresso do upload</span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/8">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#19b6ff_0%,#0b63ff_100%)] transition-all"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {uploadMessage && (
+            <div className="rounded-[1.5rem] border border-emerald-400/15 bg-emerald-500/8 px-5 py-4 text-sm text-emerald-200">
+              {uploadMessage}
+            </div>
+          )}
+
+          <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-black/10 px-6 py-6 text-sm text-slate-400">
+            {selectedFile
+              ? `Arquivo selecionado: ${selectedFile.name}`
+              : "Selecione uma planilha XLSX e envie para atualizar o DFC deste cliente."}
+          </div>
         </div>
       </section>
 
@@ -339,6 +431,7 @@ export default function DfcPage() {
 
           <button
             type="button"
+            onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
           >
             <UploadCloud className="h-4 w-4" />

@@ -1,4 +1,5 @@
 import type { DreStatementResult } from "@/lib/dre-statement";
+import { getCanonicalDfcLineKey } from "@/lib/dfc-lines";
 
 export type DfcSourceType = "dre" | "asset" | "liability" | "equity" | "cash" | "manual";
 
@@ -321,10 +322,13 @@ export function buildDfcStatement(input: {
 
   const mappingsByLine = new Map<DfcLineKey, DfcMappingLike[]>();
   for (const mapping of input.mappings) {
-    const lineKey = mapping.line_key as DfcLineKey;
+    const lineKey = getCanonicalDfcLineKey(mapping.line_key) as DfcLineKey;
     if (!CONFIGURABLE_LINE_KEYS.has(lineKey)) continue;
     const current = mappingsByLine.get(lineKey) ?? [];
-    current.push(mapping);
+    current.push({
+      ...mapping,
+      line_key: lineKey,
+    });
     mappingsByLine.set(lineKey, current);
   }
 

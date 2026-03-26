@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useClientAuthStore } from "@/stores/useClientAuthStore";
 
@@ -20,6 +20,14 @@ export default function ClientLoginPage() {
       .replace(/\.(\d{3})(\d)/, ".$1/$2")
       .replace(/(\d{4})(\d)/, "$1-$2");
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cnpjFromQuery = params.get("cnpj");
+    if (cnpjFromQuery) {
+      setCnpj(formatCnpj(cnpjFromQuery));
+    }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
