@@ -21,12 +21,13 @@ function getSectionTitle(slug: string[]) {
   return SECTION_TITLES[key] ?? key.replaceAll("-", " ");
 }
 
-export default function PortalSectionPage({
+export default async function PortalSectionPage({
   params,
 }: {
-  params: { slug: string[] };
+  params: Promise<{ slug: string[] }>;
 }) {
-  const title = getSectionTitle(params.slug);
+  const { slug } = await params;
+  const title = getSectionTitle(slug);
 
   return (
     <div className="space-y-8 p-6 md:p-8">

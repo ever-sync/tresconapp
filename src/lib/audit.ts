@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import prisma from "./prisma";
 
 interface AuditInput {
@@ -20,6 +22,8 @@ interface AuditInput {
  */
 export async function recordAuditEvent(input: AuditInput): Promise<void> {
   try {
+    const metadata = input.metadata as Prisma.InputJsonValue | undefined;
+
     await prisma.auditEvent.create({
       data: {
         actor_type: input.actorType,
@@ -30,7 +34,7 @@ export async function recordAuditEvent(input: AuditInput): Promise<void> {
         action: input.action,
         entity_type: input.entityType,
         entity_id: input.entityId,
-        metadata: input.metadata ?? undefined,
+        metadata,
         request_id: input.requestId,
         ip_address: input.ipAddress,
         user_agent: input.userAgent,

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import type { SignOptions } from "jsonwebtoken";
 import { securityConfig } from "@/config/security";
 
 export interface JwtPayload {
@@ -15,9 +16,11 @@ export interface JwtPayload {
  * Sign a JWT access token.
  */
 export function signAccessToken(payload: JwtPayload): string {
-  return jwt.sign(payload, securityConfig.jwtSecret, {
-    expiresIn: securityConfig.accessTtl,
-  });
+  const options: SignOptions = {
+    expiresIn: securityConfig.accessTtl as SignOptions["expiresIn"],
+  };
+
+  return jwt.sign(payload, securityConfig.jwtSecret, options);
 }
 
 /**
