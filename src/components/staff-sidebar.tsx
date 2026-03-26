@@ -12,7 +12,6 @@ import {
   ChevronRight,
   CircleHelp,
   FileText,
-  Landmark,
   LifeBuoy,
   LogOut,
   Settings2,
@@ -44,15 +43,8 @@ const supportItems: NavItem[] = [
 ];
 
 const configItems: NavItem[] = [
-  { href: "/dashboard/parametrizacao", label: "Parametrização", icon: Settings2 },
   { href: "/dashboard/equipe", label: "Equipe", icon: Users2 },
   { href: "/dashboard/auditoria", label: "Auditoria", icon: ShieldCheck },
-];
-
-const parametrizationSubItems: NavItem[] = [
-  { href: "/dashboard/parametrizacao#dre", label: "DRE", icon: BarChart3 },
-  { href: "/dashboard/parametrizacao#patrimonial", label: "Patrimonial", icon: Landmark },
-  { href: "/dashboard/parametrizacao#dfc", label: "DFC", icon: FileText },
 ];
 
 const helpItems: NavItem[] = [
@@ -61,24 +53,6 @@ const helpItems: NavItem[] = [
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function isAnchorActive(pathname: string, href: string, currentHash: string) {
-  const [base, anchor] = href.split("#");
-
-  if (!isActivePath(pathname, base)) {
-    return false;
-  }
-
-  if (!anchor) {
-    return true;
-  }
-
-  if (!currentHash) {
-    return anchor === "dre";
-  }
-
-  return currentHash === `#${anchor}`;
 }
 
 function NavLink({
@@ -138,7 +112,6 @@ export function StaffSidebar() {
   const logout = useAuthStore((state) => state.logout);
   const [collapsed, setCollapsed] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
-  const [currentHash, setCurrentHash] = useState("");
   const [parametrizationStatus, setParametrizationStatus] = useState<{
     drePending: number;
     patrimonialPending: number;
@@ -149,8 +122,7 @@ export function StaffSidebar() {
   const configActive = useMemo(
     () =>
       configItems.some((item) => isActivePath(pathname, item.href)) ||
-      pathname.startsWith("/dashboard/configuracao") ||
-      pathname.startsWith("/dashboard/parametrizacao"),
+      pathname.startsWith("/dashboard/configuracao"),
     [pathname]
   );
 
@@ -158,20 +130,6 @@ export function StaffSidebar() {
     parametrizationStatus && parametrizationStatus.totalPending > 0
       ? parametrizationStatus.totalPending.toLocaleString("pt-BR")
       : null;
-  const parametrizationSectionActive = pathname.startsWith("/dashboard/parametrizacao");
-  const activeParametrizationSubItem =
-    currentHash === "#patrimonial" ? "patrimonial" : currentHash === "#dfc" ? "dfc" : "dre";
-
-  useEffect(() => {
-    const updateHash = () => {
-      setCurrentHash(window.location.hash || "");
-    };
-
-    updateHash();
-    window.addEventListener("hashchange", updateHash);
-    return () => window.removeEventListener("hashchange", updateHash);
-  }, []);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -217,10 +175,10 @@ export function StaffSidebar() {
   }, []);
 
   useEffect(() => {
-    if (configActive) {
+    if (configActive && !pathname.startsWith("/dashboard/parametrizacao")) {
       setConfigOpen(true);
     }
-  }, [configActive]);
+  }, [configActive, pathname]);
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -340,41 +298,7 @@ export function StaffSidebar() {
                     item={item}
                     active={isActivePath(pathname, item.href)}
                     collapsed={false}
-                    badge={item.href === "/dashboard/parametrizacao" ? parametrizationBadge : null}
                   />
-
-                  {item.href === "/dashboard/parametrizacao" && (
-                    <div className="ml-4 space-y-1 border-l border-cyan-400/15 pl-4">
-                      <p className="px-3 pt-1 text-[0.62rem] font-black uppercase tracking-[0.32em] text-slate-500">
-                        Demonstrativos
-                      </p>
-                      {parametrizationSubItems.map((subItem) => (
-                        <NavLink
-                          key={subItem.href}
-                          item={subItem}
-                          active={isAnchorActive(pathname, subItem.href, currentHash)}
-                          collapsed={false}
-                          variant="sub"
-                          highlighted={
-                            parametrizationSectionActive &&
-                            ((activeParametrizationSubItem === "dre" &&
-                              subItem.href.endsWith("#dre")) ||
-                              (activeParametrizationSubItem === "patrimonial" &&
-                                subItem.href.endsWith("#patrimonial")) ||
-                              (activeParametrizationSubItem === "dfc" &&
-                                subItem.href.endsWith("#dfc")))
-                          }
-                          badge={
-                            subItem.href.endsWith("#dre")
-                              ? parametrizationStatus?.drePending ?? null
-                              : subItem.href.endsWith("#patrimonial")
-                                ? parametrizationStatus?.patrimonialPending ?? null
-                                : parametrizationStatus?.dfcPending ?? null
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>

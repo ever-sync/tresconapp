@@ -98,20 +98,19 @@ function normalizeText(value: string) {
     .trim();
 }
 
-const DFC_CANONICAL_KEYS = Object.keys(DFC_LINE_LABELS);
-const DFC_LABEL_TO_CANONICAL = new Map(
-  DFC_CANONICAL_KEYS.map((key) => [normalizeText(DFC_LINE_LABELS[key as keyof typeof DFC_LINE_LABELS]), key])
+const DFC_CANONICAL_KEYS = Object.keys(DFC_LINE_LABELS) as Array<keyof typeof DFC_LINE_LABELS>;
+const DFC_LABEL_TO_CANONICAL = new Map<string, string>(
+  DFC_CANONICAL_KEYS.map((key) => [normalizeText(DFC_LINE_LABELS[key]), key] as [string, string])
 );
-const DFC_KEY_TO_CANONICAL = new Map(
-  DFC_CANONICAL_KEYS.map((key) => [normalizeText(key), key]).concat(
-    Object.entries(DFC_LEGACY_TO_CANONICAL).map(([legacyKey, canonicalKey]) => [
-      normalizeText(legacyKey),
-      canonicalKey,
-    ])
+const DFC_KEY_TO_CANONICAL = new Map<string, string>(
+  DFC_CANONICAL_KEYS.map((key) => [normalizeText(key), key] as [string, string]).concat(
+    Object.entries(DFC_LEGACY_TO_CANONICAL).map(
+      ([legacyKey, canonicalKey]) => [normalizeText(legacyKey), canonicalKey] as [string, string]
+    )
   )
 );
 
-export function getCanonicalDfcLineKey(value: string) {
+export function getCanonicalDfcLineKey(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
 
@@ -119,7 +118,7 @@ export function getCanonicalDfcLineKey(value: string) {
   return DFC_LABEL_TO_CANONICAL.get(normalized) ?? DFC_KEY_TO_CANONICAL.get(normalized) ?? trimmed;
 }
 
-export function getDfcLineKeyVariants(value: string) {
+export function getDfcLineKeyVariants(value: string): string[] {
   const canonical = getCanonicalDfcLineKey(value);
   const aliases = Object.entries(DFC_LEGACY_TO_CANONICAL)
     .filter(([, mapped]) => mapped === canonical)

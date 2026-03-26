@@ -4,8 +4,8 @@ import * as XLSX from "xlsx";
 import { error, handleError, success } from "@/lib/api-response";
 import { requireClient } from "@/lib/auth-guard";
 import { createNotification } from "@/lib/notification-service";
-import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import prisma from "@/lib/prisma";
+import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import {
   convertAccumulatedToMonthly,
   resolveDreCategory,
@@ -75,17 +75,11 @@ function parseNumber(value: unknown) {
 
 function inferMovementType(code: string, rawType: string): MovementType {
   const normalizedType = normalizeText(rawType);
-  if (
-    normalizedType.includes("dre") ||
-    normalizedType.includes("resultado")
-  ) {
+  if (normalizedType.includes("dre") || normalizedType.includes("resultado")) {
     return "dre";
   }
 
-  if (
-    normalizedType.includes("patrimonial") ||
-    normalizedType.includes("balanco")
-  ) {
+  if (normalizedType.includes("patrimonial") || normalizedType.includes("balanco")) {
     return "patrimonial";
   }
 
@@ -195,23 +189,18 @@ export async function POST(request: NextRequest) {
     }
 
     const sheet = workbook.Sheets[sheetName];
-    const imported = XLSX.utils.sheet_to_json<ImportedRow>(sheet, {
-      defval: "",
-    });
+    const imported = XLSX.utils.sheet_to_json<ImportedRow>(sheet, { defval: "" });
     const parsedRows = parseRows(imported);
 
     if (parsedRows.length === 0) {
-      return error(
-        "Nao foi possivel identificar movimentacoes validas no XLSX",
-        400
-      );
+      return error("Nao foi possivel identificar movimentacoes validas no XLSX", 400);
     }
 
     const importBatch = await openImportBatch({
       accountingId: auth.accountingId,
       clientId: auth.clientId,
       year,
-      kind: "client_dfc_upload",
+      kind: "client_dre_upload",
       fileName: file.name,
       batchIndex: 0,
     });
@@ -370,10 +359,10 @@ export async function POST(request: NextRequest) {
       accountingId: auth.accountingId,
       audience: "staff",
       kind: "arquivos",
-      title: "Novo balancete DFC recebido",
+      title: "Novo balancete DRE recebido",
       description: `${client?.name ?? "Cliente"} enviou ${file.name} para o ano ${year}.`,
       clientId: auth.clientId,
-      entityType: "dfc_import",
+      entityType: "dre_import",
       entityId: importBatch.id,
     });
 
@@ -385,7 +374,7 @@ export async function POST(request: NextRequest) {
         year,
         payload: {
           statementType: "all",
-          source: "client_dfc_import",
+          source: "client_dre_import",
         },
         importBatchId: importBatch.id,
       });
@@ -419,8 +408,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     await failImportBatch({
       batchId: importBatchId,
-      errorMessage:
-        err instanceof Error ? err.message : "Falha ao importar DFC",
+      errorMessage: err instanceof Error ? err.message : "Falha ao importar DRE",
     });
     return handleError(err);
   }

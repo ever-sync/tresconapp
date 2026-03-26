@@ -3,6 +3,7 @@ import { z } from "zod";
 import prisma from "@/lib/prisma";
 import { requireStaff } from "@/lib/auth-guard";
 import { recordAuditEvent } from "@/lib/audit";
+import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import { success, handleError, getClientIp, getUserAgent } from "@/lib/api-response";
 import {
   bumpAccountingMappingVersion,
@@ -113,9 +114,29 @@ export async function POST(request: NextRequest) {
     });
 
     if (data.batch_index === data.total_batches - 1) {
-      await completeImportBatch({ batchId: importBatch.id });
+      let status: "processing" | "ready" = "processing";
+      let jobId: string | null = null;
       if (!data.client_id) {
         await bumpAccountingMappingVersion(auth.accountingId);
+      }
+
+      try {
+        const job = await enqueueBackgroundJob({
+          type: "sync_mapping",
+          accountingId: auth.accountingId,
+          clientId: data.client_id ?? null,
+          payload: {
+            scope: data.client_id ? "client" : "global",
+            source: "chart_of_accounts_import",
+          },
+          importBatchId: importBatch.id,
+          dedupe: false,
+        });
+
+        jobId = job.id;
+      } catch {
+        await completeImportBatch({ batchId: importBatch.id });
+        status = "ready";
       }
 
       await recordAuditEvent({
@@ -132,6 +153,15 @@ export async function POST(request: NextRequest) {
         },
         ipAddress: getClientIp(request),
         userAgent: getUserAgent(request),
+      });
+
+      return success({
+        imported: results.length,
+        batch_index: data.batch_index,
+        total_batches: data.total_batches,
+        status,
+        batchId: importBatch.id,
+        jobId,
       });
     }
 

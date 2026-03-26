@@ -6,6 +6,12 @@ import { requireStaff } from "@/lib/auth-guard";
 import parametrizationCache from "@/data/parametrization-cache.json";
 import { ParametrizationWorkspace } from "@/components/parametrization-workspace";
 import { cn } from "@/lib/utils";
+import {
+  DFC_DERIVED_LINES,
+  DFC_UI_GROUPS,
+  getDfcLabelFromLineKey,
+  getDfcLineKeyVariants,
+} from "@/lib/dfc-lines";
 
 type DemoKey = "dre" | "patrimonial" | "dfc";
 
@@ -168,61 +174,6 @@ const PATRIMONIAL_GROUPS: Array<[string, string[]]> = [
   ],
 ];
 
-const DFC_GROUPS: Array<[string, string[]]> = [
-  [
-    "Operacional",
-    [
-      "Resultado Liquido do Exercicio",
-      "Depreciacao e Amortizacao",
-      "Resultado da Equivalencia Patrimonial",
-      "Recebimentos de Lucros e Dividendos de Subsidiarias",
-      "Contas a Receber",
-      "Adiantamentos",
-      "Impostos a Compensar",
-      "Estoques",
-      "Despesas Antecipadas",
-      "Outras Contas a Receber",
-      "Fornecedores",
-      "Obrigacoes Trabalhistas",
-      "Obrigacoes Tributarias",
-      "Outras Obrigacoes",
-      "Parcelamentos",
-    ],
-  ],
-  [
-    "Investimentos",
-    [
-      "Recebimentos por Vendas de Ativo",
-      "Compras de Imobilizado",
-      "Aquisicoes em Investimentos",
-      "Baixa de Ativo Imobilizado",
-    ],
-  ],
-  [
-    "Financiamentos",
-    [
-      "Integralizacao ou Aumento de Capital Social",
-      "Pagamento de Lucros e Dividendos",
-      "Variacao em Emprestimos/Financiamentos",
-      "Dividendos Provisionados a Pagar",
-      "Variacao Emprestimos Pessoas Ligadas PJ/PF",
-    ],
-  ],
-  ["Base", ["Disponibilidades Base"]],
-];
-
-const DFC_DERIVED_LINES = [
-  "Lucro Ajustado",
-  "Variacao Ativo",
-  "Variacao Passivo",
-  "Resultado Operacional",
-  "Resultado de Investimento",
-  "Resultado Financeiro",
-  "Saldo Inicial Disponivel",
-  "Saldo Final Disponivel",
-  "Resultado Geracao de Caixa",
-];
-
 function normalizeDemoKey(value: string | string[] | undefined): DemoKey {
   const raw = Array.isArray(value) ? value[0] : value;
   if (raw === "patrimonial" || raw === "dfc") return raw;
@@ -286,7 +237,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
       ? firstTargetOf(DRE_GROUPS)
       : selectedTab === "patrimonial"
         ? firstTargetOf(PATRIMONIAL_GROUPS)
-        : firstTargetOf(DFC_GROUPS);
+        : firstTargetOf(DFC_UI_GROUPS);
 
   let loadError: string | null = null;
   let mappedChartAccounts: ChartAccountRow[] = [];
@@ -445,7 +396,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
           where: {
             accounting_id: auth.accountingId,
             client_id: null,
-            line_key: initialTarget,
+            line_key: { in: getDfcLineKeyVariants(initialTarget) },
           },
           select: {
             line_key: true,
@@ -457,9 +408,11 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
         }),
       ]);
 
-      mappedCountsByTarget = new Map(
-        dfcCounts.map((group) => [normalizeText(group.line_key), group._count._all])
-      );
+      mappedCountsByTarget = dfcCounts.reduce((acc, group) => {
+        const key = normalizeText(getDfcLabelFromLineKey(group.line_key));
+        acc.set(key, (acc.get(key) ?? 0) + group._count._all);
+        return acc;
+      }, new Map<string, number>());
       dfcLineMappings = initialMappings;
 
       const mappedIds = uniqueStrings(initialMappings.map((mapping) => mapping.chart_account_id));
@@ -522,7 +475,9 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
     patrimonialMappings = [];
     dfcLineMappings =
       selectedTab === "dfc"
-        ? (snapshot.dfcLineMappings ?? []).filter((mapping) => mapping.line_key === initialTarget)
+        ? (snapshot.dfcLineMappings ?? []).filter((mapping) =>
+            getDfcLineKeyVariants(initialTarget).includes(mapping.line_key)
+          )
         : [];
     unmappedPreviewAccounts = selectedTab === "dre" ? [] : (snapshot.chartAccounts ?? []).slice(0, UNMAPPED_PREVIEW_LIMIT);
     unmappedTotalCount = selectedTab === "dre" ? 0 : (snapshot.chartAccounts ?? []).length;
@@ -534,7 +489,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
       }, new Map<string, number>());
     } else if (selectedTab === "dfc") {
       mappedCountsByTarget = (snapshot.dfcLineMappings ?? []).reduce((acc, mapping) => {
-        const key = normalizeText(mapping.line_key);
+        const key = normalizeText(getDfcLabelFromLineKey(mapping.line_key));
         acc.set(key, (acc.get(key) ?? 0) + 1);
         return acc;
       }, new Map<string, number>());
@@ -622,9 +577,11 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
         reduced_code: linkedAccount?.reduced_code ?? mapping.reduced_code_snapshot,
         name: linkedAccount?.name ?? mapping.account_code_snapshot,
       });
-      const key = normalizeText(mapping.line_key);
+      const key = normalizeText(getDfcLabelFromLineKey(mapping.line_key));
       const list = mappingsByLine.get(key) ?? [];
-      list.push(snapshot);
+      if (!list.some((item) => item.code === snapshot.code)) {
+        list.push(snapshot);
+      }
       mappingsByLine.set(key, list);
     }
 
@@ -635,7 +592,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
       description: "Parametrizacao global das linhas do fluxo de caixa.",
       tone: "border-blue-400/20",
       groups: buildGroupedCards(
-        DFC_GROUPS,
+        DFC_UI_GROUPS,
         mappedCountsByTarget,
         mappingsByLine,
         "Defina a linha do fluxo de caixa e mantenha a consolidacao padronizada."

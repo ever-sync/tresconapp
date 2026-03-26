@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { requireStaff } from "@/lib/auth-guard";
 import { recordAuditEvent } from "@/lib/audit";
 import { success, handleError, getClientIp, getUserAgent } from "@/lib/api-response";
+import { enqueueBackgroundJob } from "@/lib/background-jobs";
 import {
   convertAccumulatedToMonthly,
   resolveDreCategory,
@@ -258,13 +259,33 @@ export async function POST(request: NextRequest) {
     });
 
     if (data.batch_index === data.total_batches - 1) {
-      await completeImportBatch({ batchId: importBatch.id });
-      await rebuildStatements({
-        accountingId: auth.accountingId,
-        clientId: data.client_id,
-        year: data.year,
-        statementType: "all",
-      });
+      let status: "processing" | "ready" = "processing";
+      let jobId: string | null = null;
+
+      try {
+        const job = await enqueueBackgroundJob({
+          type: "rebuild_statements",
+          accountingId: auth.accountingId,
+          clientId: data.client_id,
+          year: data.year,
+          payload: {
+            statementType: "all",
+            source: "staff_movements_import",
+          },
+          importBatchId: importBatch.id,
+        });
+
+        jobId = job.id;
+      } catch {
+        await rebuildStatements({
+          accountingId: auth.accountingId,
+          clientId: data.client_id,
+          year: data.year,
+          statementType: "all",
+        });
+        await completeImportBatch({ batchId: importBatch.id });
+        status = "ready";
+      }
 
       await recordAuditEvent({
         actorType: "staff",
@@ -282,6 +303,15 @@ export async function POST(request: NextRequest) {
         },
         ipAddress: getClientIp(request),
         userAgent: getUserAgent(request),
+      });
+
+      return success({
+        imported: results.length,
+        batch_index: data.batch_index,
+        total_batches: data.total_batches,
+        status,
+        batchId: importBatch.id,
+        jobId,
       });
     }
 

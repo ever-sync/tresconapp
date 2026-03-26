@@ -35,7 +35,10 @@ type ClientInbox = {
   industry: string;
   unreadCount: number;
   documentCount: number;
-  documents: ClientDocument[];
+  latestDocument: {
+    title: string;
+    sentAt: string;
+  } | null;
 };
 
 type Pagination = {
@@ -95,6 +98,15 @@ export default function DocumentosPage() {
   });
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [documentsPage, setDocumentsPage] = useState(1);
+  const [documentsPagination, setDocumentsPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 1,
+  });
+  const [selectedClientDocuments, setSelectedClientDocuments] = useState<ClientDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -111,7 +123,7 @@ export default function DocumentosPage() {
           params.set("query", deferredQuery.trim());
         }
 
-        const response = await fetch(`/api/documents?${params.toString()}`, { cache: "no-store" });
+        const response = await fetch(`/api/documents/clients?${params.toString()}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to load documents");
 
         const payload = (await response.json()) as {
@@ -154,10 +166,94 @@ export default function DocumentosPage() {
     setSelectedDocumentId(null);
   }, [clients, selectedClient, selectedClientId]);
 
+  useEffect(() => {
+    if (!selectedClientId) return;
+
+    let active = true;
+
+    async function loadClientDocuments() {
+      setDocumentsLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(documentsPage),
+          pageSize: "50",
+        });
+        if (deferredQuery.trim()) {
+          params.set("query", deferredQuery.trim());
+        }
+
+        const response = await fetch(
+          `/api/documents/client/${selectedClientId}?${params.toString()}`,
+          { cache: "no-store" }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to load client documents");
+        }
+
+        const payload = (await response.json()) as {
+          client?: {
+            id: string;
+            unreadCount: number;
+            documentCount: number;
+          };
+          documents?: ClientDocument[];
+          pagination?: Pagination;
+        };
+
+        if (!active) return;
+
+        setSelectedClientDocuments(payload.documents ?? []);
+        setDocumentsPagination(
+          payload.pagination ?? {
+            page: documentsPage,
+            pageSize: 50,
+            total: payload.documents?.length ?? 0,
+            totalPages: 1,
+          }
+        );
+
+        if (payload.client) {
+          setClients((current) =>
+            current.map((client) =>
+              client.id === payload.client?.id
+                ? {
+                    ...client,
+                    unreadCount: payload.client.unreadCount,
+                    documentCount: payload.client.documentCount,
+                  }
+                : client
+            )
+          );
+        }
+      } catch {
+        if (!active) return;
+        setSelectedClientDocuments([]);
+        setDocumentsPagination({
+          page: 1,
+          pageSize: 50,
+          total: 0,
+          totalPages: 1,
+        });
+      } finally {
+        if (active) {
+          setDocumentsLoading(false);
+        }
+      }
+    }
+
+    void loadClientDocuments();
+
+    return () => {
+      active = false;
+    };
+  }, [deferredQuery, documentsPage, selectedClientId]);
+
   const selectedDocument = useMemo(() => {
-    if (!selectedClient || !selectedDocumentId) return null;
-    return selectedClient.documents.find((document) => document.id === selectedDocumentId) ?? null;
-  }, [selectedClient, selectedDocumentId]);
+    if (!selectedDocumentId) return null;
+    return (
+      selectedClientDocuments.find((document) => document.id === selectedDocumentId) ?? null
+    );
+  }, [selectedClientDocuments, selectedDocumentId]);
 
   const selectedPreviewUrl = selectedDocument
     ? `/api/documents/${selectedDocument.id}/file`
@@ -179,25 +275,36 @@ export default function DocumentosPage() {
     setPage(1);
   }, [deferredQuery]);
 
+  useEffect(() => {
+    setDocumentsPage(1);
+  }, [deferredQuery, selectedClientId]);
+
   function openClient(clientId: string) {
     setSelectedClientId(clientId);
     setSelectedDocumentId(null);
+    setDocumentsPage(1);
+    setSelectedClientDocuments([]);
   }
 
   function closeClient() {
     setSelectedClientId(null);
     setSelectedDocumentId(null);
+    setSelectedClientDocuments([]);
+    setDocumentsPage(1);
   }
 
   function openDocument(clientId: string, documentId: string) {
+    setSelectedClientDocuments((current) =>
+      current.map((document) =>
+        document.id === documentId ? { ...document, viewed: true } : document
+      )
+    );
     setClients((current) =>
       current.map((client) =>
         client.id === clientId
           ? {
               ...client,
-              documents: client.documents.map((document) =>
-                document.id === documentId ? { ...document, viewed: true } : document
-              ),
+              unreadCount: Math.max(0, client.unreadCount - 1),
             }
           : client
       )
@@ -237,7 +344,7 @@ export default function DocumentosPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedClientId, selectedDocumentId]);
 
-  const currentDocumentCount = selectedClient?.documents.length ?? 0;
+  const currentDocumentCount = documentsPagination.total;
   const currentUnreadCount = selectedClient ? unreadByClient[selectedClient.id] ?? 0 : 0;
 
   return (
@@ -289,10 +396,7 @@ export default function DocumentosPage() {
             ) : (
               clients.map((client) => {
                 const unreadCount = unreadByClient[client.id] ?? 0;
-                const latestDocument = [...client.documents].sort(
-                  (left, right) =>
-                    new Date(right.sentAt).getTime() - new Date(left.sentAt).getTime()
-                )[0];
+                const latestDocument = client.latestDocument;
 
                 return (
                   <button
@@ -431,7 +535,16 @@ export default function DocumentosPage() {
 
             <div className="max-h-[72vh] overflow-y-auto px-6 py-6">
               <div className="grid gap-4 md:grid-cols-2">
-                {selectedClient.documents.map((document) => {
+                {documentsLoading && selectedClientDocuments.length === 0 ? (
+                  <div className="col-span-full rounded-[1.5rem] border border-dashed border-white/10 bg-white/3 px-5 py-10 text-center text-sm text-slate-500">
+                    Carregando documentos...
+                  </div>
+                ) : selectedClientDocuments.length === 0 ? (
+                  <div className="col-span-full rounded-[1.5rem] border border-dashed border-white/10 bg-white/3 px-5 py-10 text-center text-sm text-slate-500">
+                    Nenhum documento encontrado para este cliente.
+                  </div>
+                ) : (
+                  selectedClientDocuments.map((document) => {
                   const isUnread = !document.viewed;
 
                   return (
@@ -484,7 +597,40 @@ export default function DocumentosPage() {
                       </div>
                     </button>
                   );
-                })}
+                  })
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center justify-between rounded-2xl border border-white/6 bg-white/3 px-4 py-3 text-sm text-slate-300">
+                <span>
+                  Pagina {documentsPagination.page} de {documentsPagination.totalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={documentsPagination.page <= 1 || documentsLoading}
+                    onClick={() => setDocumentsPage((current) => Math.max(1, current - 1))}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      documentsPagination.page >= documentsPagination.totalPages || documentsLoading
+                    }
+                    onClick={() =>
+                      setDocumentsPage((current) =>
+                        Math.min(documentsPagination.totalPages, current + 1)
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Proxima
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -61,18 +61,25 @@ export async function GET(request: NextRequest) {
           : [];
 
       const accountsById = new Map(accounts.map((account) => [account.id, account]));
+      const dedupedAccounts = Array.from(
+        new Map(
+          mappings.map((mapping) => {
+            const account = accountsById.get(mapping.chart_account_id);
+            const item = {
+              code: account?.code ?? mapping.account_code_snapshot,
+              reducedCode: account?.reduced_code ?? mapping.reduced_code_snapshot,
+              name: account?.name ?? mapping.account_code_snapshot,
+            };
+
+            return [item.code, item];
+          })
+        ).values()
+      );
 
       return success({
         target,
-        total: mappings.length,
-        accounts: mappings.map((mapping) => {
-          const account = accountsById.get(mapping.chart_account_id);
-          return {
-            code: account?.code ?? mapping.account_code_snapshot,
-            reducedCode: account?.reduced_code ?? mapping.reduced_code_snapshot,
-            name: account?.name ?? mapping.account_code_snapshot,
-          };
-        }),
+        total: dedupedAccounts.length,
+        accounts: dedupedAccounts,
       });
     }
 

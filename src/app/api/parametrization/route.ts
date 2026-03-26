@@ -7,6 +7,8 @@ import { success, error, handleError } from "@/lib/api-response";
 import { resolveDreCategory } from "@/lib/dre-statement";
 import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
 import { bumpAccountingMappingVersion } from "@/lib/statement-snapshots";
+import { getCanonicalDfcLineKey, getDfcLineKeyVariants } from "@/lib/dfc-lines";
+import { enqueueBackgroundJob } from "@/lib/background-jobs";
 
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
@@ -271,6 +273,20 @@ async function syncGlobalFlags(accountingId: string) {
   };
 }
 
+async function queueGlobalSync(accountingId: string) {
+  try {
+    await enqueueBackgroundJob({
+      type: "sync_mapping",
+      accountingId,
+      payload: {
+        source: "parametrization",
+      },
+    });
+  } catch (err) {
+    console.error("Failed to enqueue mapping sync job", err);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireStaff();
@@ -287,11 +303,14 @@ export async function POST(request: NextRequest) {
       }
 
       if (body.kind === "dfc") {
+        const lineKey = getCanonicalDfcLineKey(body.target);
+        const lineKeyVariants = getDfcLineKeyVariants(body.target);
+
         await prisma.dFCLineMapping.deleteMany({
           where: {
             accounting_id: auth.accountingId,
             client_id: null,
-            line_key: body.target,
+            line_key: { in: lineKeyVariants },
             chart_account_id: chartAccount.id,
           },
         });
@@ -300,7 +319,7 @@ export async function POST(request: NextRequest) {
           data: {
             accounting_id: auth.accountingId,
             client_id: null,
-            line_key: body.target,
+            line_key: lineKey,
             chart_account_id: chartAccount.id,
             account_code_snapshot: chartAccount.code,
             reduced_code_snapshot: chartAccount.reduced_code,
@@ -312,6 +331,7 @@ export async function POST(request: NextRequest) {
 
         await recomputeChartAccountsState(auth.accountingId, [chartAccount.id]);
         const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+        await queueGlobalSync(auth.accountingId);
 
         return success({
           mapping: {
@@ -365,6 +385,7 @@ export async function POST(request: NextRequest) {
 
       await recomputeChartAccountsState(auth.accountingId, [chartAccount.id]);
       const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      await queueGlobalSync(auth.accountingId);
 
       return success({
         mapping: {
@@ -399,13 +420,15 @@ export async function POST(request: NextRequest) {
       }
 
       if (body.kind === "dfc") {
+        const lineKey = getCanonicalDfcLineKey(body.target);
+        const lineKeyVariants = getDfcLineKeyVariants(body.target);
         const chartAccountIds = [...new Set(chartAccounts.map((account) => account.id))];
 
         await prisma.dFCLineMapping.deleteMany({
           where: {
             accounting_id: auth.accountingId,
             client_id: null,
-            line_key: body.target,
+            line_key: { in: lineKeyVariants },
             chart_account_id: { in: chartAccountIds },
           },
         });
@@ -414,7 +437,7 @@ export async function POST(request: NextRequest) {
           data: chartAccounts.map((account) => ({
             accounting_id: auth.accountingId,
             client_id: null,
-            line_key: body.target!,
+            line_key: lineKey,
             chart_account_id: account.id,
             account_code_snapshot: account.code,
             reduced_code_snapshot: account.reduced_code,
@@ -426,6 +449,7 @@ export async function POST(request: NextRequest) {
 
         await recomputeChartAccountsState(auth.accountingId, chartAccountIds);
         const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+        await queueGlobalSync(auth.accountingId);
 
         return success({
           inserted: chartAccounts.length,
@@ -479,6 +503,7 @@ export async function POST(request: NextRequest) {
         chartAccounts.map((account) => account.id)
       );
       const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      await queueGlobalSync(auth.accountingId);
 
       return success({
         inserted: chartAccounts.length,
@@ -515,18 +540,20 @@ export async function POST(request: NextRequest) {
           return error("Linha de DFC obrigatoria", 400);
         }
 
+        const lineKeyVariants = getDfcLineKeyVariants(body.target);
         const ids = chartAccounts.map((account) => account.id);
         await prisma.dFCLineMapping.deleteMany({
           where: {
             accounting_id: auth.accountingId,
             client_id: null,
-            line_key: body.target,
+            line_key: { in: lineKeyVariants },
             chart_account_id: { in: ids },
           },
         });
 
         await recomputeChartAccountsState(auth.accountingId, ids);
         const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+        await queueGlobalSync(auth.accountingId);
 
         return success({
           removed: true,
@@ -558,6 +585,7 @@ export async function POST(request: NextRequest) {
         chartAccounts.map((account) => account.id)
       );
       const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      await queueGlobalSync(auth.accountingId);
 
       return success({
         removed: true,
@@ -582,6 +610,7 @@ export async function POST(request: NextRequest) {
 
         const records = sourceMappings
           .map((mapping) => {
+            const lineKey = getCanonicalDfcLineKey(mapping.line_key);
             const account =
               byCode.get(mapping.account_code_snapshot) ??
               globalAccounts.find(
@@ -591,7 +620,7 @@ export async function POST(request: NextRequest) {
             return {
               accounting_id: auth.accountingId,
               client_id: null,
-              line_key: mapping.line_key,
+              line_key: lineKey,
               chart_account_id: account.id,
               account_code_snapshot: account.code,
               reduced_code_snapshot: account.reduced_code,
@@ -602,6 +631,10 @@ export async function POST(request: NextRequest) {
           })
           .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
+        const dedupedRecords = Array.from(
+          new Map(records.map((record) => [`${record.line_key}::${record.chart_account_id}`, record])).values()
+        );
+
         await prisma.dFCLineMapping.deleteMany({
           where: {
             accounting_id: auth.accountingId,
@@ -609,16 +642,17 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        if (records.length > 0) {
-          await prisma.dFCLineMapping.createMany({ data: records });
+        if (dedupedRecords.length > 0) {
+          await prisma.dFCLineMapping.createMany({ data: dedupedRecords });
         }
 
         await recomputeChartAccountsState(
           auth.accountingId,
-          records.map((record) => record.chart_account_id)
+          dedupedRecords.map((record) => record.chart_account_id)
         );
         const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
-        return success({ imported: records.length, mappingVersion });
+        await queueGlobalSync(auth.accountingId);
+        return success({ imported: dedupedRecords.length, mappingVersion });
       }
 
       const sourceMappings =
@@ -701,7 +735,15 @@ export async function POST(request: NextRequest) {
 
       const synced = await syncGlobalFlags(auth.accountingId);
       const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      await queueGlobalSync(auth.accountingId);
       return success({ imported: records.length, synced, mappingVersion });
+    }
+
+    if (body.action === "sync") {
+      const synced = await syncGlobalFlags(auth.accountingId);
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      await queueGlobalSync(auth.accountingId);
+      return success({ synced, mappingVersion });
     }
 
     if (body.action === "auto-classify") {
@@ -764,12 +806,9 @@ export async function POST(request: NextRequest) {
 
       const synced = await syncGlobalFlags(auth.accountingId);
       const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      await queueGlobalSync(auth.accountingId);
       return success({ imported: records.length, synced, mappingVersion });
     }
-
-      const synced = await syncGlobalFlags(auth.accountingId);
-      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
-      return success({ synced, mappingVersion });
   } catch (err) {
     return handleError(err);
   }

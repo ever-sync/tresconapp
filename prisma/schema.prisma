@@ -36,6 +36,7 @@ model Accounting {
   supportTickets   SupportTicket[]
   notifications    Notification[]
   importBatches    ImportBatch[]
+  backgroundJobs   BackgroundJob[]
   statementSnapshots StatementSnapshot[]
 }
 
@@ -177,6 +178,7 @@ model Client {
   supportTickets   SupportTicket[]
   notifications    Notification[]
   importBatches    ImportBatch[]
+  backgroundJobs   BackgroundJob[]
   statementSnapshots StatementSnapshot[]
 
   @@index([accounting_id])
@@ -435,6 +437,7 @@ model ImportBatch {
   id            String    @id @default(uuid())
   accounting_id String
   client_id     String?
+  background_job_id String? @unique
   year          Int?
   kind          String
   file_name     String?
@@ -449,10 +452,35 @@ model ImportBatch {
 
   accounting Accounting @relation(fields: [accounting_id], references: [id], onDelete: Cascade)
   client     Client?    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  backgroundJob BackgroundJob? @relation(fields: [background_job_id], references: [id], onDelete: SetNull)
 
   @@index([accounting_id, kind, status])
   @@index([client_id, year, kind, status])
   @@index([started_at])
+}
+
+model BackgroundJob {
+  id            String    @id @default(uuid())
+  type          String
+  accounting_id String
+  client_id     String?
+  year          Int?
+  payload_json  Json?
+  status        String    @default("queued") // "queued" | "processing" | "done" | "failed"
+  attempts      Int       @default(0)
+  available_at  DateTime  @default(now())
+  started_at    DateTime?
+  finished_at   DateTime?
+  error_message String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  accounting  Accounting   @relation(fields: [accounting_id], references: [id], onDelete: Cascade)
+  client      Client?      @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  importBatch ImportBatch?
+
+  @@index([status, available_at])
+  @@index([accounting_id, client_id, year, type])
 }
 
 model StatementSnapshot {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -93,25 +94,50 @@ function money(value: number) {
 export default function PortalPage() {
   const client = useClientAuthStore((state) => state.client);
   const logout = useClientAuthStore((state) => state.logout);
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 7 }, (_, index) => String(currentYear - 3 + index));
+  }, []);
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.88))] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-center gap-2">
-          {tabs.map((tab, index) => (
-            <button
-              key={tab}
-              className={cn(
-                "rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
-                index === 0
-                  ? "bg-cyan-500 text-white shadow-[0_0_24px_rgba(14,165,233,0.32)]"
-                  : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
-              )}
-              type="button"
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {tabs.map((tab, index) => (
+              <button
+                key={tab}
+                className={cn(
+                  "rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
+                  index === 0
+                    ? "bg-cyan-500 text-white shadow-[0_0_24px_rgba(14,165,233,0.32)]"
+                    : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
+                )}
+                type="button"
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+              Ano
+            </p>
+            <select
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(event.target.value)}
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
             >
-              {tab}
-            </button>
-          ))}
+              {availableYears.map((item) => (
+                <option key={item} value={item} className="bg-slate-900">
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </section>
 
@@ -299,12 +325,18 @@ export default function PortalPage() {
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
+                <Link
+                  href={
+                    report.title.includes("Balan")
+                      ? `/portal/balanco-patrimonial?year=${selectedYear}`
+                      : report.title.includes("DRE")
+                        ? `/portal/dre?year=${selectedYear}`
+                        : "/portal/dfc?year=".concat(selectedYear)
+                  }
                   className="text-slate-500 transition hover:text-slate-200"
                 >
                   <UploadCloud className="h-4 w-4" />
-                </button>
+                </Link>
               </div>
             ))}
           </div>

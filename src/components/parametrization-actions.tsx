@@ -15,6 +15,13 @@ type AccountOption = {
   level: number;
 };
 
+type AccountsPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 function kindLabel(kind: ParametrizationKind) {
   if (kind === "dre") return "DRE";
   if (kind === "patrimonial") return "Patrimonial";
@@ -38,7 +45,14 @@ export function ParametrizationAddButton({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [pagination, setPagination] = useState<AccountsPagination>({
+    page: 1,
+    pageSize: 30,
+    total: 0,
+    totalPages: 1,
+  });
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [selectedAccounts, setSelectedAccounts] = useState<AccountOption[]>([]);
   const [saving, setSaving] = useState(false);
@@ -60,6 +74,9 @@ export function ParametrizationAddButton({
       try {
         const params = new URLSearchParams();
         params.set("kind", kind);
+        params.set("target", target);
+        params.set("page", String(page));
+        params.set("pageSize", "30");
         if (query.trim()) params.set("query", query.trim());
 
         const response = await fetch(`/api/parametrization/accounts?${params.toString()}`, {
@@ -71,12 +88,29 @@ export function ParametrizationAddButton({
           throw new Error("Nao foi possivel carregar as contas");
         }
 
-        const payload = (await response.json()) as { accounts?: AccountOption[] };
+        const payload = (await response.json()) as {
+          accounts?: AccountOption[];
+          pagination?: AccountsPagination;
+        };
         setAccounts(payload.accounts ?? []);
+        setPagination(
+          payload.pagination ?? {
+            page,
+            pageSize: 30,
+            total: payload.accounts?.length ?? 0,
+            totalPages: 1,
+          }
+        );
       } catch (err) {
         if ((err as DOMException)?.name !== "AbortError") {
           console.error(err);
           setAccounts([]);
+          setPagination({
+            page: 1,
+            pageSize: 30,
+            total: 0,
+            totalPages: 1,
+          });
         }
       } finally {
         setAccountsLoading(false);
@@ -87,16 +121,28 @@ export function ParametrizationAddButton({
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [kind, open, query]);
+  }, [kind, open, page, query, target]);
 
   useEffect(() => {
     if (!open) return;
 
     setQuery("");
+    setPage(1);
     setAccounts([]);
+    setPagination({
+      page: 1,
+      pageSize: 30,
+      total: 0,
+      totalPages: 1,
+    });
     setSelectedAccounts([]);
     lastToggledIndexRef.current = null;
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setPage(1);
+  }, [open, query]);
 
   function toggleAccount(
     account: AccountOption,
@@ -247,8 +293,8 @@ export function ParametrizationAddButton({
               </button>
             </div>
 
-            <div className="grid min-h-0 gap-5 overflow-y-auto px-6 py-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <section className="min-h-0 rounded-[1.5rem] border border-white/8 bg-white/4 p-4">
+            <div className="grid min-h-0 flex-1 gap-5 overflow-hidden px-6 py-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <section className="flex min-h-0 flex-col rounded-[1.5rem] border border-white/8 bg-white/4 p-4">
                 <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-400">
                   <Search className="h-4 w-4 shrink-0" />
                   <input
@@ -284,7 +330,7 @@ export function ParametrizationAddButton({
                   </div>
                 </div>
 
-                <div className="mt-4 max-h-[56vh] space-y-2 overflow-y-auto pr-1">
+                <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                   {accountsLoading ? (
                     <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-10 text-center text-sm text-slate-500">
                       Carregando contas...
@@ -350,9 +396,35 @@ export function ParametrizationAddButton({
                     })
                   )}
                 </div>
+
+                <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/8 bg-black/10 px-3 py-3 text-xs text-slate-400">
+                  <span>
+                    Pagina {pagination.page} de {pagination.totalPages} • {pagination.total} conta(s)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={accountsLoading || pagination.page <= 1}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-bold uppercase tracking-[0.16em] text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPage((current) => Math.min(pagination.totalPages, current + 1))
+                      }
+                      disabled={accountsLoading || pagination.page >= pagination.totalPages}
+                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-bold uppercase tracking-[0.16em] text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Proxima
+                    </button>
+                  </div>
+                </div>
               </section>
 
-              <aside className="flex min-h-0 flex-col rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-5">
+              <aside className="flex min-h-0 h-full flex-col overflow-hidden rounded-[1.5rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-5">
                 <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
                   Selecionadas
                 </p>
@@ -447,17 +519,19 @@ export function ParametrizationAddButton({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleSave()}
-                      disabled={saving || selectedCount === 0}
-                      className="sticky bottom-0 inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      {selectedCount === 1
-                        ? "Salvar mapeamento"
-                        : `Salvar ${selectedCount} mapeamentos`}
-                    </button>
+                    <div className="mt-auto border-t border-white/8 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => void handleSave()}
+                        disabled={saving || selectedCount === 0}
+                        className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        {selectedCount === 1
+                          ? "Salvar mapeamento"
+                          : `Salvar ${selectedCount} mapeamentos`}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-10 text-center text-sm text-slate-500">

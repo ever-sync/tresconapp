@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -13,12 +13,16 @@ import {
 import {
   Download,
   FileDown,
+  FileUp,
   Landmark,
   List,
+  LoaderCircle,
   TrendingUp,
   UploadCloud,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
+import { uploadFormDataWithProgress } from "@/lib/upload-request";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "lista" | "graficos" | "fechado";
@@ -65,6 +69,19 @@ type PatrimonialApiResponse = {
     profitability: MetricItem[];
     activity: MetricItem[];
   };
+};
+
+type ImportResponse = {
+  imported: number;
+  year: number;
+  status?: "processing" | "ready";
+  batchId?: string | null;
+  jobId?: string | null;
+};
+
+type ImportBatchStatus = {
+  status: "processing" | "ready" | "failed";
+  errorMessage?: string | null;
 };
 
 const tabs: Array<{ id: ViewMode; label: string; icon: typeof List }> = [
@@ -227,35 +244,131 @@ function accentColor(accent: string) {
   }
 }
 
-export default function BalancoPatrimonialPage() {
+function BalancoPatrimonialPageContent() {
+  const searchParams = useSearchParams();
+  const initialYearFromQuery = searchParams.get("year");
   const [view, setView] = useState<ViewMode>("fechado");
   const [data, setData] = useState<PatrimonialApiResponse>(emptyData);
   const [loading, setLoading] = useState(true);
+  const [year, setYear] = useState(
+    initialYearFromQuery && /^\d{4}$/.test(initialYearFromQuery)
+      ? initialYearFromQuery
+      : String(new Date().getFullYear())
+  );
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 7 }, (_, index) => String(currentYear - 3 + index));
+  }, []);
 
-    async function loadPatrimonial() {
+  const loadPatrimonial = useCallback(
+    async (signal?: AbortSignal) => {
       try {
-        const response = await fetch("/api/patrimonial/summary", {
-          signal: controller.signal,
+        setLoading(true);
+        const response = await fetch(`/api/patrimonial/summary?year=${year}`, {
+          signal,
+          cache: "no-store",
         });
         if (!response.ok) {
           throw new Error("Falha ao carregar o patrimonio");
         }
         const payload = (await response.json()) as PatrimonialApiResponse;
         setData(payload);
+        setYear(String(payload.year));
       } catch {
-        setData(emptyData);
+        setData({
+          ...emptyData,
+          year: Number(year),
+        });
       } finally {
         setLoading(false);
       }
+    },
+    [year]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadPatrimonial(controller.signal);
+    return () => controller.abort();
+  }, [loadPatrimonial]);
+
+  const waitForBatch = useCallback(async (batchId: string) => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+
+      const response = await fetch(`/api/import-batches/${batchId}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Nao foi possivel acompanhar a importacao do Patrimonial");
+      }
+
+      const payload = (await response.json()) as ImportBatchStatus;
+      if (payload.status === "ready") {
+        return;
+      }
+
+      if (payload.status === "failed") {
+        throw new Error(payload.errorMessage || "A importacao do Patrimonial falhou");
+      }
     }
 
-    loadPatrimonial();
-
-    return () => controller.abort();
+    throw new Error("A importacao ainda esta processando. Tente novamente em instantes.");
   }, []);
+
+  async function handleUpload() {
+    if (!selectedFile) {
+      window.alert("Selecione uma planilha XLSX para enviar.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", selectedFile);
+      formData.set("year", year);
+
+      const payload = await uploadFormDataWithProgress<ImportResponse>(
+        "/api/client/patrimonial/import",
+        formData,
+        setUploadProgress
+      );
+
+      setUploadMessage(
+        `${payload.imported} linha(s) importadas para ${payload.year}${
+          payload.status === "processing" ? ". Processando demonstrativos..." : "."
+        }`
+      );
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      setYear(String(payload.year));
+      if (payload.status === "processing" && payload.batchId) {
+        await waitForBatch(payload.batchId);
+        setUploadMessage(
+          `${payload.imported} linha(s) importadas para ${payload.year}. Patrimonial atualizado com sucesso.`
+        );
+      }
+      await loadPatrimonial();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Falha ao importar o Patrimonial");
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
+  }
 
   const columns = useMemo(() => data.monthLabels, [data.monthLabels]);
 
@@ -268,11 +381,11 @@ export default function BalancoPatrimonialPage() {
               Balanco Patrimonial
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Resultado Consolidado - {data.activeMonthLabel}
+              Resultado Consolidado - {data.activeMonthLabel} de {year}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <div className="flex rounded-2xl border border-white/6 bg-black/20 p-1">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -296,12 +409,62 @@ export default function BalancoPatrimonialPage() {
               })}
             </div>
 
+            <div>
+              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                Ano
+              </p>
+              <select
+                value={year}
+                onChange={(event) => {
+                  setYear(event.target.value);
+                  setUploadMessage(null);
+                }}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+              >
+                {availableYears.map((item) => (
+                  <option key={item} value={item} className="bg-slate-900">
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={(event) => {
+                const nextFile = event.target.files?.[0] ?? null;
+                setSelectedFile(nextFile);
+                setUploadMessage(null);
+              }}
+            />
+
             <button
               type="button"
-              className="flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
+              onClick={() => {
+                if (selectedFile) {
+                  void handleUpload();
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
+              disabled={uploading}
+              className="flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <UploadCloud className="h-4 w-4" />
-              Importar Saldo 2026
+              {uploading ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : selectedFile ? (
+                <UploadCloud className="h-4 w-4" />
+              ) : (
+                <FileUp className="h-4 w-4" />
+              )}
+              {uploading
+                ? "Enviando..."
+                : selectedFile
+                  ? `Importar Saldo ${year}`
+                  : `Selecionar Saldo ${year}`}
             </button>
 
             <button
@@ -312,6 +475,39 @@ export default function BalancoPatrimonialPage() {
             </button>
           </div>
         </div>
+
+        {(selectedFile || uploadProgress !== null || uploadMessage) && (
+          <div className="mt-5 space-y-3">
+            {selectedFile && (
+              <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] px-5 py-4 text-sm text-slate-300">
+                Arquivo selecionado:{" "}
+                <span className="font-semibold text-white">{selectedFile.name}</span> • Ano{" "}
+                {year}
+              </div>
+            )}
+
+            {uploadProgress !== null && (
+              <div className="rounded-[1.5rem] border border-cyan-400/15 bg-cyan-500/8 px-5 py-4">
+                <div className="flex items-center justify-between gap-3 text-sm text-cyan-200">
+                  <span>Progresso do upload</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/8">
+                  <div
+                    className="h-full rounded-full bg-[linear-gradient(90deg,#19b6ff_0%,#0b63ff_100%)] transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {uploadMessage && (
+              <div className="rounded-[1.5rem] border border-emerald-400/15 bg-emerald-500/8 px-5 py-4 text-sm text-emerald-200">
+                {uploadMessage}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {view === "fechado" && (
@@ -472,7 +668,7 @@ export default function BalancoPatrimonialPage() {
                       </div>
                     ))}
 
-                    <div className={cn("text-right font-black text-white")}>
+                    <div className="text-right font-black text-white">
                       {formatNumber(row.accumulated)}
                     </div>
                     <div className="text-right font-black text-cyan-300">
@@ -504,9 +700,23 @@ export default function BalancoPatrimonialPage() {
 
       {loading && (
         <div className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-400">
-          Carregando balanço patrimonial...
+          Carregando balanco patrimonial...
         </div>
       )}
     </div>
+  );
+}
+
+export default function BalancoPatrimonialPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-4 text-sm text-slate-400 sm:p-6 lg:p-8">
+          Carregando balanco patrimonial...
+        </div>
+      }
+    >
+      <BalancoPatrimonialPageContent />
+    </Suspense>
   );
 }

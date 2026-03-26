@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -21,6 +21,7 @@ import {
   LoaderCircle,
   UploadCloud,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
 import { uploadFormDataWithProgress } from "@/lib/upload-request";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,20 @@ type DfcResponse = {
   snapshotStatus: string;
   mappingVersion: number;
   computedAt: string;
+};
+
+type ImportResponse = {
+  imported: number;
+  year: number;
+  valuesMode: string;
+  status?: "processing" | "ready";
+  batchId?: string | null;
+  jobId?: string | null;
+};
+
+type ImportBatchStatus = {
+  status: "processing" | "ready" | "failed";
+  errorMessage?: string | null;
 };
 
 const tabs: Array<{ id: ViewMode; label: string; icon: typeof List }> = [
@@ -144,10 +159,16 @@ function ChartCard({
   );
 }
 
-export default function DfcPage() {
+function DfcPageContent() {
+  const searchParams = useSearchParams();
+  const initialYearFromQuery = searchParams.get("year");
   const [view, setView] = useState<ViewMode>("lista");
   const [month, setMonth] = useState("Jan");
-  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [year, setYear] = useState(
+    initialYearFromQuery && /^\d{4}$/.test(initialYearFromQuery)
+      ? initialYearFromQuery
+      : String(new Date().getFullYear())
+  );
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -157,6 +178,11 @@ export default function DfcPage() {
   const [data, setData] = useState<DfcResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 7 }, (_, index) => String(currentYear - 3 + index));
+  }, []);
 
   const loadSummary = useCallback(async () => {
     setLoading(true);
@@ -188,6 +214,32 @@ export default function DfcPage() {
   useEffect(() => {
     void loadSummary();
   }, [loadSummary]);
+
+  const waitForBatch = useCallback(async (batchId: string) => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+
+      const response = await fetch(`/api/import-batches/${batchId}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Nao foi possivel acompanhar a importacao do DFC");
+      }
+
+      const payload = (await response.json()) as ImportBatchStatus;
+      if (payload.status === "ready") {
+        return;
+      }
+
+      if (payload.status === "failed") {
+        throw new Error(payload.errorMessage || "A importacao do DFC falhou");
+      }
+    }
+
+    throw new Error("A importacao ainda esta processando. Tente novamente em instantes.");
+  }, []);
 
   const monthLabels = data?.monthLabels ?? MONTHS;
   const listRows = data?.rows ?? EMPTY_ROWS;
@@ -237,11 +289,11 @@ export default function DfcPage() {
       formData.set("year", year);
       formData.set("valuesMode", valuesMode);
 
-      const payload = await uploadFormDataWithProgress<{
-        imported: number;
-        year: number;
-        valuesMode: string;
-      }>("/api/client/dfc/import", formData, setUploadProgress);
+      const payload = await uploadFormDataWithProgress<ImportResponse>(
+        "/api/client/dfc/import",
+        formData,
+        setUploadProgress
+      );
 
       setUploadMessage(
         `${payload.imported} linha(s) importadas para ${payload.year} em modo ${payload.valuesMode === "accumulated" ? "acumulado" : "mensal"}.`
@@ -249,6 +301,15 @@ export default function DfcPage() {
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
+      }
+      if (payload.status === "processing" && payload.batchId) {
+        setUploadMessage(
+          `${payload.imported} linha(s) importadas para ${payload.year}. Processando DFC...`
+        );
+        await waitForBatch(payload.batchId);
+        setUploadMessage(
+          `${payload.imported} linha(s) importadas para ${payload.year}. DFC atualizado com sucesso.`
+        );
       }
       await loadSummary();
     } catch (err) {
@@ -342,11 +403,20 @@ export default function DfcPage() {
               <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
                 Ano
               </p>
-              <input
+              <select
                 value={year}
-                onChange={(event) => setYear(event.target.value)}
+                onChange={(event) => {
+                  setYear(event.target.value);
+                  setUploadMessage(null);
+                }}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
-              />
+              >
+                {availableYears.map((item) => (
+                  <option key={item} value={item} className="bg-slate-900">
+                    {item}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button
@@ -644,5 +714,13 @@ export default function DfcPage() {
         ))}
       </section>
     </div>
+  );
+}
+
+export default function DfcPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-sm text-slate-400 sm:p-6 lg:p-8">Carregando DFC...</div>}>
+      <DfcPageContent />
+    </Suspense>
   );
 }
