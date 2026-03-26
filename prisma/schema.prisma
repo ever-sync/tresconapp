@@ -21,6 +21,7 @@ model Accounting {
   address    String?
   logo_url   String?
   plan       String   @default("free")
+  mapping_version Int  @default(1)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
@@ -34,6 +35,8 @@ model Accounting {
   documents        ClientDocument[]
   supportTickets   SupportTicket[]
   notifications    Notification[]
+  importBatches    ImportBatch[]
+  statementSnapshots StatementSnapshot[]
 }
 
 model User {
@@ -173,6 +176,8 @@ model Client {
   documents        ClientDocument[]
   supportTickets   SupportTicket[]
   notifications    Notification[]
+  importBatches    ImportBatch[]
+  statementSnapshots StatementSnapshot[]
 
   @@index([accounting_id])
   @@index([cnpj])
@@ -204,6 +209,7 @@ model SupportTicket {
   @@index([accounting_id])
   @@index([client_id])
   @@index([status])
+  @@index([accounting_id, status, updated_at])
 }
 
 model SupportTicketMessage {
@@ -269,6 +275,7 @@ model ChartOfAccounts {
   @@index([accounting_id])
   @@index([client_id])
   @@index([code])
+  @@index([accounting_id, client_id, level, code])
 }
 
 model MonthlyMovement {
@@ -299,6 +306,7 @@ model MonthlyMovement {
   @@index([client_id, year, type])
   @@index([client_id, reduced_code])
   @@index([deleted_at])
+  @@index([client_id, year, type, deleted_at])
 }
 
 // ============================================================
@@ -322,6 +330,7 @@ model DREMapping {
   @@index([accounting_id])
   @@index([client_id])
   @@index([category])
+  @@index([accounting_id, client_id, category, account_code])
 }
 
 // ============================================================
@@ -345,6 +354,7 @@ model PatrimonialMapping {
   @@index([accounting_id])
   @@index([client_id])
   @@index([category])
+  @@index([accounting_id, client_id, category, account_code])
 }
 
 // ============================================================
@@ -374,6 +384,7 @@ model DFCLineMapping {
   @@index([client_id])
   @@index([line_key])
   @@index([chart_account_id])
+  @@index([accounting_id, client_id, line_key, chart_account_id])
 }
 
 // ============================================================
@@ -413,6 +424,76 @@ model ClientDocument {
   @@index([storage_path])
   @@index([created_at])
   @@index([deleted_at])
+  @@index([client_id, deleted_at, created_at])
+}
+
+// ============================================================
+// IMPORTS + SNAPSHOTS: Processamento e leitura escalavel
+// ============================================================
+
+model ImportBatch {
+  id            String    @id @default(uuid())
+  accounting_id String
+  client_id     String?
+  year          Int?
+  kind          String
+  file_name     String?
+  status        String    @default("processing") // "processing" | "ready" | "failed"
+  row_count     Int       @default(0)
+  error_count   Int       @default(0)
+  started_at    DateTime  @default(now())
+  finished_at   DateTime?
+  error_message String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id], onDelete: Cascade)
+  client     Client?    @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@index([accounting_id, kind, status])
+  @@index([client_id, year, kind, status])
+  @@index([started_at])
+}
+
+model StatementSnapshot {
+  id             String    @id @default(uuid())
+  accounting_id  String
+  client_id      String
+  year           Int
+  statement_type String // "dre" | "patrimonial" | "dfc"
+  mapping_version Int
+  status         String    @default("ready") // "ready" | "partial" | "failed" | "stale"
+  summary_json   Json
+  metrics_json   Json?
+  computed_at    DateTime  @default(now())
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  accounting Accounting              @relation(fields: [accounting_id], references: [id], onDelete: Cascade)
+  client     Client                  @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  lines      StatementLineSnapshot[]
+
+  @@unique([client_id, year, statement_type, mapping_version])
+  @@index([accounting_id, client_id, year, statement_type])
+  @@index([client_id, statement_type, computed_at])
+}
+
+model StatementLineSnapshot {
+  id             String   @id @default(uuid())
+  snapshot_id    String
+  line_key       String
+  label          String
+  section        String?
+  kind           String?
+  sort_order     Int      @default(0)
+  values_json    Json
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  snapshot StatementSnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([snapshot_id, section, sort_order])
+  @@index([snapshot_id, line_key])
 }
 
 // ============================================================

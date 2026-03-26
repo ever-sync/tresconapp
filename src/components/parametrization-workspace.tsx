@@ -38,6 +38,7 @@ type DemoSection = {
   tone: string;
   groups: GroupSection[];
   unmappedAccounts: AccountSnapshot[];
+  unmappedTotalCount: number;
   derivedLines?: string[];
 };
 
@@ -52,16 +53,6 @@ function formatListLabel(account: AccountSnapshot) {
 
 function groupCardTitle(title: string) {
   return title;
-}
-
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\s/.-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function resolveSectionColor(index: number) {
@@ -127,7 +118,10 @@ export function ParametrizationWorkspace({
     setSection(initialSection);
   }, [initialSection]);
 
-  const unmappedCount = useMemo(() => section.unmappedAccounts.length, [section.unmappedAccounts]);
+  const unmappedCount = useMemo(
+    () => section.unmappedTotalCount || section.unmappedAccounts.length,
+    [section.unmappedAccounts.length, section.unmappedTotalCount]
+  );
 
   function handleAccountSaved(target: string, account: { code: string; reducedCode: string | null; name: string }) {
     const snapshot: AccountSnapshot = {
@@ -140,6 +134,10 @@ export function ParametrizationWorkspace({
       const withoutCode = removeCodesFromSection(current, new Set([snapshot.code]));
       return {
         ...withoutCode,
+        unmappedTotalCount:
+          current.key === "dre"
+            ? 0
+            : Math.max(0, current.unmappedTotalCount - (current.unmappedAccounts.some((item) => item.code === snapshot.code) ? 1 : 0)),
         groups: withoutCode.groups.map((group) => ({
           ...group,
           cards: group.cards.map((card) => {
@@ -168,6 +166,7 @@ export function ParametrizationWorkspace({
 
       return {
         ...withoutCode,
+        unmappedTotalCount: current.key === "dre" ? 0 : current.unmappedTotalCount + 1,
         unmappedAccounts: appendUniqueAccounts(withoutCode.unmappedAccounts, [removed]),
         groups: withoutCode.groups.map((group) => ({
           ...group,
@@ -194,6 +193,8 @@ export function ParametrizationWorkspace({
 
       return {
         ...withoutCodes,
+        unmappedTotalCount:
+          current.key === "dre" ? 0 : current.unmappedTotalCount + removedSnapshots.length,
         unmappedAccounts: appendUniqueAccounts(withoutCodes.unmappedAccounts, removedSnapshots),
         groups: withoutCodes.groups.map((group) => ({
           ...group,
@@ -315,7 +316,7 @@ export function ParametrizationWorkspace({
                   Contas nao mapeadas ({unmappedCount})
                 </p>
                 <p className="mt-1 text-xs text-amber-100/60">
-                  Use a base de referencia para classificar rapidamente as contas sem destino.
+                  Exibindo uma amostra inicial para manter a tela mais leve.
                 </p>
               </div>
               <button

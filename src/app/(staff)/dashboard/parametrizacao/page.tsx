@@ -1,18 +1,10 @@
 import Link from "next/link";
-import {
-  CheckCircle2,
-  ChevronRight,
-} from "lucide-react";
+import { CheckCircle2, ChevronRight } from "lucide-react";
 
 import prisma from "@/lib/prisma";
 import { requireStaff } from "@/lib/auth-guard";
 import parametrizationCache from "@/data/parametrization-cache.json";
 import { ParametrizationWorkspace } from "@/components/parametrization-workspace";
-import {
-  ParametrizationAddButton,
-  ParametrizationRemoveButton,
-  ParametrizationRemoveManyButton,
-} from "@/components/parametrization-actions";
 import { cn } from "@/lib/utils";
 
 type DemoKey = "dre" | "patrimonial" | "dfc";
@@ -46,10 +38,10 @@ type DemoSection = {
   title: string;
   subtitle: string;
   description: string;
-  accent: string;
   tone: string;
   groups: GroupSection[];
   unmappedAccounts: AccountSnapshot[];
+  unmappedTotalCount: number;
   derivedLines?: string[];
 };
 
@@ -80,9 +72,6 @@ type DfcLineMappingRow = {
   chart_account_id: string;
   account_code_snapshot: string;
   reduced_code_snapshot: string | null;
-  source_type: string;
-  multiplier: number;
-  include_children: boolean;
 };
 
 type ParametrizationCacheSnapshot = {
@@ -93,13 +82,7 @@ type ParametrizationCacheSnapshot = {
 };
 
 const MONTH_YEAR = new Date().getFullYear();
-const COCA_COLA_SOURCE_CLIENT_ID = "68d82e4e-5571-406a-88c4-5fb3abf5d63e";
-
-function normalizeDemoKey(value: string | string[] | undefined): DemoKey {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (raw === "patrimonial" || raw === "dfc") return raw;
-  return "dre";
-}
+const UNMAPPED_PREVIEW_LIMIT = 120;
 
 const DRE_GROUPS: Array<[string, string[]]> = [
   [
@@ -239,6 +222,12 @@ const DFC_DERIVED_LINES = [
   "Resultado Geracao de Caixa",
 ];
 
+function normalizeDemoKey(value: string | string[] | undefined): DemoKey {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === "patrimonial" || raw === "dfc") return raw;
+  return "dre";
+}
+
 function normalizeText(value: string) {
   return value
     .toLowerCase()
@@ -249,17 +238,20 @@ function normalizeText(value: string) {
     .trim();
 }
 
-function countLabel(count: number) {
-  return `${count} conta(s) mapeada(s)`;
-}
-
-function formatListLabel(account: AccountSnapshot) {
-  const code = account.reducedCode || account.code;
-  return `${code} - ${account.name}`;
-}
-
-function groupCardTitle(title: string) {
-  return title;
+function buildGroupedCards(
+  groups: Array<[string, string[]]>,
+  accountsByCategory: Map<string, AccountSnapshot[]>,
+  description: string
+): GroupSection[] {
+  return groups.map(([title, items]) => ({
+    title,
+    cards: items.map((item) => ({
+      key: normalizeText(item),
+      title: item,
+      mappedAccounts: accountsByCategory.get(normalizeText(item)) ?? [],
+      description,
+    })),
+  }));
 }
 
 function buildAccountSnapshot(item: {
@@ -274,218 +266,8 @@ function buildAccountSnapshot(item: {
   };
 }
 
-function resolveConfiguredCategory(category: string | null | undefined) {
-  const normalized = category ? normalizeText(category) : "";
-  return normalized || null;
-}
-
-function resolveSectionColor(index: number) {
-  const palette = [
-    "border-cyan-500/20 bg-cyan-500/8",
-    "border-sky-500/20 bg-sky-500/8",
-    "border-blue-500/20 bg-blue-500/8",
-    "border-emerald-500/20 bg-emerald-500/8",
-    "border-amber-500/20 bg-amber-500/8",
-  ];
-
-  return palette[index % palette.length];
-}
-
-function buildGroupedCards(
-  groups: Array<[string, string[]]>,
-  accountsByCategory: Map<string, AccountSnapshot[]>
-): GroupSection[] {
-  return groups.map(([title, items]) => ({
-    title,
-    cards: items.map((item) => ({
-      key: normalizeText(item),
-      title: item,
-      mappedAccounts: accountsByCategory.get(normalizeText(item)) ?? [],
-      description: "Ajuste o DE-PARA desta linha para consolidar o demonstrativo.",
-    })),
-  }));
-}
-
-function buildDfcGroups(
-  groups: Array<[string, string[]]>,
-  mappingsByLine: Map<string, AccountSnapshot[]>
-): GroupSection[] {
-  return groups.map(([title, items]) => ({
-    title,
-    cards: items.map((item) => ({
-      key: normalizeText(item),
-      title: item,
-      mappedAccounts: mappingsByLine.get(normalizeText(item)) ?? [],
-      description: "Defina a linha de fluxo de caixa e mantenha a consolidacao padronizada.",
-    })),
-  }));
-}
-
-function renderAccountLines(
-  accounts: AccountSnapshot[],
-  kind?: DemoKey,
-  target?: string
-) {
-  if (accounts.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-slate-500">
-        Nenhuma conta configurada nessa categoria.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {accounts.map((account) => (
-        <div
-          key={`${account.code}-${account.name}`}
-          className="rounded-[1.1rem] border border-white/8 bg-[#0b1525] px-4 py-3"
-        >
-          <div className="mb-2 text-[0.58rem] font-black uppercase tracking-[0.32em] text-slate-500">
-            Conta
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3 text-sm text-slate-100">
-              {formatListLabel(account)}
-            </div>
-            {kind && target ? (
-              <ParametrizationRemoveButton
-                kind={kind}
-                target={target}
-                accountCode={account.code}
-              />
-            ) : null}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DemoSectionView({
-  section,
-  isOffline,
-}: {
-  section: DemoSection;
-  isOffline: boolean;
-}) {
-  return (
-    <section
-      id={section.key}
-      className={cn(
-        "rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(8,18,32,0.92))] shadow-[0_24px_90px_rgba(0,0,0,0.3)]",
-        section.tone
-      )}
-    >
-      <div className="px-5 py-5">
-        <div className="space-y-5">
-          {section.groups.map((group, index) => (
-            <div key={group.title} className="rounded-[1.5rem] border border-white/8 bg-white/3 p-4">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-500">
-                    {group.title}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-400">
-                    Selecione as contas titulo que alimentam este bloco.
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.24em] text-slate-200",
-                    resolveSectionColor(index)
-                  )}
-                >
-                  {group.cards.length} itens
-                </span>
-              </div>
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                {group.cards.map((card) => (
-                  <article
-                    key={card.key}
-                    className="rounded-[1.4rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,39,0.98),rgba(8,17,30,0.95))] p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-extrabold text-white">{groupCardTitle(card.title)}</h3>
-                        <p className="mt-1 text-xs text-slate-500">{countLabel(card.mappedAccounts.length)}</p>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        <ParametrizationAddButton
-                          kind={section.key}
-                          target={card.title}
-                          disabled={isOffline}
-                        />
-                        <ParametrizationRemoveManyButton
-                          kind={section.key}
-                          target={card.title}
-                          accountCodes={card.mappedAccounts.map((account) => account.code)}
-                          disabled={isOffline || card.mappedAccounts.length === 0}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-2xl border border-white/6 bg-black/10 p-4">
-                      {renderAccountLines(card.mappedAccounts, section.key, card.title)}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {section.key !== "dre" && (
-          <div className="mt-6 rounded-[1.6rem] border border-amber-500/20 bg-[linear-gradient(180deg,rgba(42,35,20,0.96),rgba(32,26,16,0.92))] p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-black uppercase tracking-[0.28em] text-amber-300">
-                  Contas nao mapeadas ({section.unmappedAccounts.length})
-                </p>
-                <p className="mt-1 text-xs text-amber-100/60">
-                  Use a base de referencia para classificar rapidamente as contas sem destino.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-amber-200 transition hover:bg-amber-500/15"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Revisar lista
-              </button>
-            </div>
-
-            <div className="max-h-64 overflow-auto rounded-2xl border border-white/6 bg-black/20 p-4">
-              {renderAccountLines(section.unmappedAccounts)}
-            </div>
-          </div>
-        )}
-
-        {section.derivedLines && (
-          <div className="mt-6 rounded-[1.6rem] border border-white/8 bg-white/4 p-4">
-            <p className="text-sm font-black uppercase tracking-[0.28em] text-slate-300">
-              Linhas derivadas nao parametrizadas
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Essas linhas sao calculadas automaticamente pelo sistema.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {section.derivedLines.map((line) => (
-                <span
-                  key={line}
-                  className="rounded-full border border-white/8 bg-black/15 px-3 py-2 text-xs font-semibold text-slate-200"
-                >
-                  {line}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
-  );
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 export default async function ParametrizacaoPage({ searchParams }: ParametrizacaoPageProps) {
@@ -494,232 +276,282 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
   const selectedTab = normalizeDemoKey(resolvedSearchParams.tab);
 
   let loadError: string | null = null;
-  let cocaColaSourceClient: { id: string; name: string; cnpj: string | null } | null = null;
-  let referenceClient: { id: string; name: string; cnpj: string | null } | null = null;
-  let firstClient: { id: string; name: string; cnpj: string | null } | null = null;
-  let chartAccounts: ChartAccountRow[] = [];
+  let mappedChartAccounts: ChartAccountRow[] = [];
   let dreMappings: DreMappingRow[] = [];
   let patrimonialMappings: PatrimonialMappingRow[] = [];
   let dfcLineMappings: DfcLineMappingRow[] = [];
+  let unmappedPreviewAccounts: ChartAccountRow[] = [];
+  let unmappedTotalCount = 0;
 
   try {
-    [
-      cocaColaSourceClient,
-      referenceClient,
-      firstClient,
-      chartAccounts,
-      dreMappings,
-      patrimonialMappings,
-      dfcLineMappings,
-    ] = await Promise.all([
-      prisma.client.findUnique({
-        where: {
-          id: COCA_COLA_SOURCE_CLIENT_ID,
-        },
-        select: { id: true, name: true, cnpj: true },
-      }),
-      prisma.client.findFirst({
-        where: {
-          accounting_id: auth.accountingId,
-          deleted_at: null,
-          name: { contains: "coca cola", mode: "insensitive" },
-        },
-        select: { id: true, name: true, cnpj: true },
-      }),
-      prisma.client.findFirst({
-        where: {
-          accounting_id: auth.accountingId,
-          deleted_at: null,
-        },
-        orderBy: { created_at: "asc" },
-        select: { id: true, name: true, cnpj: true },
-      }),
-      prisma.chartOfAccounts.findMany({
+    if (selectedTab === "dre") {
+      dreMappings = await prisma.dREMapping.findMany({
         where: {
           accounting_id: auth.accountingId,
           client_id: null,
         },
         select: {
-          id: true,
-          code: true,
-          reduced_code: true,
-          name: true,
-          report_category: true,
-          report_type: true,
-          level: true,
+          account_code: true,
+          account_name: true,
+          category: true,
         },
-        orderBy: [{ level: "asc" }, { code: "asc" }],
-      }),
-      selectedTab === "dre"
-        ? prisma.dREMapping.findMany({
-            where: {
+        orderBy: [{ category: "asc" }, { account_code: "asc" }],
+      });
+
+      const dreCodes = uniqueStrings(dreMappings.map((mapping) => mapping.account_code));
+      if (dreCodes.length > 0) {
+        mappedChartAccounts = await prisma.chartOfAccounts.findMany({
+          where: {
+            accounting_id: auth.accountingId,
+            client_id: null,
+            code: { in: dreCodes },
+          },
+          select: {
+            id: true,
+            code: true,
+            reduced_code: true,
+            name: true,
+            report_category: true,
+            report_type: true,
+            level: true,
+          },
+        });
+      }
+    } else if (selectedTab === "patrimonial") {
+      patrimonialMappings = await prisma.patrimonialMapping.findMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: null,
+        },
+        select: {
+          account_code: true,
+          account_name: true,
+          category: true,
+        },
+        orderBy: [{ category: "asc" }, { account_code: "asc" }],
+      });
+
+      const mappedCodes = uniqueStrings(patrimonialMappings.map((mapping) => mapping.account_code));
+      const unmappedWhere =
+        mappedCodes.length > 0
+          ? {
               accounting_id: auth.accountingId,
-              client_id: null,
-            },
-            select: {
-              account_code: true,
-              account_name: true,
-              category: true,
-            },
-            orderBy: [{ category: "asc" }, { account_code: "asc" }],
-          })
-        : Promise.resolve([]),
-      selectedTab === "patrimonial"
-        ? prisma.patrimonialMapping.findMany({
-            where: {
+              client_id: null as null,
+              code: { notIn: mappedCodes },
+            }
+          : {
               accounting_id: auth.accountingId,
-              client_id: null,
-            },
-            select: {
-              account_code: true,
-              account_name: true,
-              category: true,
-            },
-            orderBy: [{ category: "asc" }, { account_code: "asc" }],
-          })
-        : Promise.resolve([]),
-      selectedTab === "dfc"
-        ? prisma.dFCLineMapping.findMany({
-            where: {
+              client_id: null as null,
+            };
+
+      [mappedChartAccounts, unmappedPreviewAccounts, unmappedTotalCount] = await Promise.all([
+        mappedCodes.length > 0
+          ? prisma.chartOfAccounts.findMany({
+              where: {
+                accounting_id: auth.accountingId,
+                client_id: null,
+                code: { in: mappedCodes },
+              },
+              select: {
+                id: true,
+                code: true,
+                reduced_code: true,
+                name: true,
+                report_category: true,
+                report_type: true,
+                level: true,
+              },
+            })
+          : Promise.resolve([]),
+        prisma.chartOfAccounts.findMany({
+          where: unmappedWhere,
+          select: {
+            id: true,
+            code: true,
+            reduced_code: true,
+            name: true,
+            report_category: true,
+            report_type: true,
+            level: true,
+          },
+          orderBy: [{ level: "asc" }, { code: "asc" }],
+          take: UNMAPPED_PREVIEW_LIMIT,
+        }),
+        prisma.chartOfAccounts.count({ where: unmappedWhere }),
+      ]);
+    } else {
+      dfcLineMappings = await prisma.dFCLineMapping.findMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: null,
+        },
+        select: {
+          line_key: true,
+          chart_account_id: true,
+          account_code_snapshot: true,
+          reduced_code_snapshot: true,
+        },
+        orderBy: [{ line_key: "asc" }, { account_code_snapshot: "asc" }],
+      });
+
+      const mappedIds = uniqueStrings(dfcLineMappings.map((mapping) => mapping.chart_account_id));
+      const unmappedWhere =
+        mappedIds.length > 0
+          ? {
               accounting_id: auth.accountingId,
-              client_id: null,
-            },
-            select: {
-              line_key: true,
-              chart_account_id: true,
-              account_code_snapshot: true,
-              reduced_code_snapshot: true,
-              source_type: true,
-              multiplier: true,
-              include_children: true,
-            },
-            orderBy: [{ line_key: "asc" }, { account_code_snapshot: "asc" }],
-          })
-        : Promise.resolve([]),
-    ]);
+              client_id: null as null,
+              id: { notIn: mappedIds },
+            }
+          : {
+              accounting_id: auth.accountingId,
+              client_id: null as null,
+            };
+
+      [mappedChartAccounts, unmappedPreviewAccounts, unmappedTotalCount] = await Promise.all([
+        mappedIds.length > 0
+          ? prisma.chartOfAccounts.findMany({
+              where: {
+                accounting_id: auth.accountingId,
+                client_id: null,
+                id: { in: mappedIds },
+              },
+              select: {
+                id: true,
+                code: true,
+                reduced_code: true,
+                name: true,
+                report_category: true,
+                report_type: true,
+                level: true,
+              },
+            })
+          : Promise.resolve([]),
+        prisma.chartOfAccounts.findMany({
+          where: unmappedWhere,
+          select: {
+            id: true,
+            code: true,
+            reduced_code: true,
+            name: true,
+            report_category: true,
+            report_type: true,
+            level: true,
+          },
+          orderBy: [{ level: "asc" }, { code: "asc" }],
+          take: UNMAPPED_PREVIEW_LIMIT,
+        }),
+        prisma.chartOfAccounts.count({ where: unmappedWhere }),
+      ]);
+    }
   } catch (err) {
     console.error("[parametrizacao] failed to load reference data", err);
     const snapshot = parametrizationCache as ParametrizationCacheSnapshot;
-    cocaColaSourceClient = snapshot.sourceClient;
-    referenceClient = snapshot.sourceClient;
-    firstClient = snapshot.sourceClient;
-    chartAccounts = snapshot.chartAccounts ?? [];
-    dreMappings = snapshot.dreMappings ?? [];
+    mappedChartAccounts = snapshot.chartAccounts ?? [];
+    dreMappings = selectedTab === "dre" ? snapshot.dreMappings ?? [] : [];
     patrimonialMappings = [];
-    dfcLineMappings = snapshot.dfcLineMappings ?? [];
+    dfcLineMappings = selectedTab === "dfc" ? snapshot.dfcLineMappings ?? [] : [];
+    unmappedPreviewAccounts = selectedTab === "dre" ? [] : (snapshot.chartAccounts ?? []).slice(0, UNMAPPED_PREVIEW_LIMIT);
+    unmappedTotalCount = selectedTab === "dre" ? 0 : (snapshot.chartAccounts ?? []).length;
     loadError =
       "Nao foi possivel carregar o banco agora. A tela esta usando a copia local da parametrizacao da Coca-Cola.";
   }
 
-  const baseClient = cocaColaSourceClient ?? referenceClient ?? firstClient;
-  const baseClientName = baseClient?.name ?? "Base de referencia";
   const isOffline = Boolean(loadError);
 
-  const mergedAccountsByCode = new Map<string, ChartAccountRow>();
-  const mergedAccountsById = new Map<string, ChartAccountRow>();
-  for (const account of chartAccounts) {
-    mergedAccountsByCode.set(account.code, account);
-    mergedAccountsById.set(account.id, account);
-  }
+  const mappedAccountsByCode = new Map(mappedChartAccounts.map((account) => [account.code, account]));
+  const mappedAccountsById = new Map(mappedChartAccounts.map((account) => [account.id, account]));
 
   let activeSection: DemoSection;
 
   if (selectedTab === "dre") {
     const dreMappingsByCategory = new Map<string, AccountSnapshot[]>();
-    const dreUnmapped: AccountSnapshot[] = [];
 
-    for (const account of mergedAccountsByCode.values()) {
-      const mapping = (dreMappings as DreMappingRow[]).find((item) => item.account_code === account.code) ?? null;
-      const category = resolveConfiguredCategory(mapping?.category ?? account.report_category);
-
-      const snapshot = buildAccountSnapshot(account);
-      if (category) {
-        const list = dreMappingsByCategory.get(normalizeText(category)) ?? [];
-        list.push(snapshot);
-        dreMappingsByCategory.set(normalizeText(category), list);
-      } else {
-        dreUnmapped.push(snapshot);
-      }
+    for (const mapping of dreMappings) {
+      const account = mappedAccountsByCode.get(mapping.account_code);
+      const snapshot = buildAccountSnapshot({
+        code: mapping.account_code,
+        reduced_code: account?.reduced_code ?? null,
+        name: account?.name ?? mapping.account_name,
+      });
+      const key = normalizeText(mapping.category);
+      const list = dreMappingsByCategory.get(key) ?? [];
+      list.push(snapshot);
+      dreMappingsByCategory.set(key, list);
     }
 
     activeSection = {
       key: "dre",
       title: "DRE",
-      subtitle: "Parametrizacao DRE Global",
-      description:
-        "Base de referencia: " +
-        baseClientName +
-        ". O mapeamento global vale para toda a carteira da contabilidade.",
-      accent: "text-cyan-300",
+      subtitle: "Resultado",
+      description: "Parametrizacao global do resultado consolidado.",
       tone: "border-cyan-400/20",
-      groups: buildGroupedCards(DRE_GROUPS, dreMappingsByCategory),
-      unmappedAccounts: dreUnmapped,
+      groups: buildGroupedCards(
+        DRE_GROUPS,
+        dreMappingsByCategory,
+        "Ajuste o DE-PARA desta linha para consolidar o demonstrativo."
+      ),
+      unmappedAccounts: [],
+      unmappedTotalCount: 0,
     };
   } else if (selectedTab === "patrimonial") {
-    const patrimonialMappingsByCategory = new Map<string, AccountSnapshot[]>();
-    const patrimonialUnmapped: AccountSnapshot[] = [];
+    const mappingsByCategory = new Map<string, AccountSnapshot[]>();
 
-    for (const account of mergedAccountsByCode.values()) {
-      const mapping =
-        (patrimonialMappings as PatrimonialMappingRow[]).find((item) => item.account_code === account.code) ?? null;
-      const category = resolveConfiguredCategory(mapping?.category ?? account.report_category);
-
-      const snapshot = buildAccountSnapshot(account);
-      if (category) {
-        const list = patrimonialMappingsByCategory.get(normalizeText(category)) ?? [];
-        list.push(snapshot);
-        patrimonialMappingsByCategory.set(normalizeText(category), list);
-      } else {
-        patrimonialUnmapped.push(snapshot);
-      }
+    for (const mapping of patrimonialMappings) {
+      const account = mappedAccountsByCode.get(mapping.account_code);
+      const snapshot = buildAccountSnapshot({
+        code: mapping.account_code,
+        reduced_code: account?.reduced_code ?? null,
+        name: account?.name ?? mapping.account_name,
+      });
+      const key = normalizeText(mapping.category);
+      const list = mappingsByCategory.get(key) ?? [];
+      list.push(snapshot);
+      mappingsByCategory.set(key, list);
     }
 
     activeSection = {
       key: "patrimonial",
       title: "Patrimonial",
-      subtitle: "Parametrizacao Patrimonial Global",
-      description:
-        "Base de referencia: " +
-        baseClientName +
-        ". A leitura do balanco segue os grupos patrimoniais e os indicadores da tela.",
-      accent: "text-sky-300",
+      subtitle: "Balanco",
+      description: "Parametrizacao global dos grupos patrimoniais e indicadores.",
       tone: "border-sky-400/20",
-      groups: buildGroupedCards(PATRIMONIAL_GROUPS, patrimonialMappingsByCategory),
-      unmappedAccounts: patrimonialUnmapped,
+      groups: buildGroupedCards(
+        PATRIMONIAL_GROUPS,
+        mappingsByCategory,
+        "Ajuste o DE-PARA desta linha para consolidar o balanco."
+      ),
+      unmappedAccounts: unmappedPreviewAccounts.map(buildAccountSnapshot),
+      unmappedTotalCount,
     };
   } else {
-    const dfcMappingsByLine = new Map<string, AccountSnapshot[]>();
-    const dfcMappedCodes = new Set<string>();
-    for (const mapping of dfcLineMappings as DfcLineMappingRow[]) {
-      const key = normalizeText(mapping.line_key);
-      const linkedAccount = mergedAccountsById.get(mapping.chart_account_id) ?? null;
+    const mappingsByLine = new Map<string, AccountSnapshot[]>();
+
+    for (const mapping of dfcLineMappings) {
+      const linkedAccount = mappedAccountsById.get(mapping.chart_account_id);
       const snapshot = buildAccountSnapshot({
         code: linkedAccount?.code ?? mapping.account_code_snapshot,
         reduced_code: linkedAccount?.reduced_code ?? mapping.reduced_code_snapshot,
         name: linkedAccount?.name ?? mapping.account_code_snapshot,
       });
-      const list = dfcMappingsByLine.get(key) ?? [];
+      const key = normalizeText(mapping.line_key);
+      const list = mappingsByLine.get(key) ?? [];
       list.push(snapshot);
-      dfcMappingsByLine.set(key, list);
-      dfcMappedCodes.add(snapshot.code);
+      mappingsByLine.set(key, list);
     }
-
-    const dfcUnmapped = Array.from(mergedAccountsByCode.values())
-      .filter((account) => !dfcMappedCodes.has(account.code))
-      .map(buildAccountSnapshot);
 
     activeSection = {
       key: "dfc",
       title: "DFC",
-      subtitle: "Parametrizacao DFC Global",
-      description:
-        "Base de referencia: " +
-        baseClientName +
-        ". O fluxo de caixa indireto usa linhas parametrizadas e linhas derivadas calculadas.",
-      accent: "text-blue-300",
+      subtitle: "Caixa",
+      description: "Parametrizacao global das linhas do fluxo de caixa.",
       tone: "border-blue-400/20",
-      groups: buildDfcGroups(DFC_GROUPS, dfcMappingsByLine),
-      unmappedAccounts: dfcUnmapped,
+      groups: buildGroupedCards(
+        DFC_GROUPS,
+        mappingsByLine,
+        "Defina a linha do fluxo de caixa e mantenha a consolidacao padronizada."
+      ),
+      unmappedAccounts: unmappedPreviewAccounts.map(buildAccountSnapshot),
+      unmappedTotalCount,
       derivedLines: DFC_DERIVED_LINES,
     };
   }
@@ -736,8 +568,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
               Parametrizacao dos Demonstrativos
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              O que for salvo aqui vale para toda a contabilidade. Use a base de referencia
-              para acelerar a configuracao.
+              O que for salvo aqui vale para toda a contabilidade.
             </p>
           </div>
 

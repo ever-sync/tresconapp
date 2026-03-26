@@ -6,6 +6,10 @@ import { requireStaff } from "@/lib/auth-guard";
 import { success, error, handleError } from "@/lib/api-response";
 import { resolveDreCategory } from "@/lib/dre-statement";
 import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
+import { bumpAccountingMappingVersion } from "@/lib/statement-snapshots";
+
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
 
 const actionSchema = z.enum([
   "add-mapping",
@@ -306,6 +310,7 @@ export async function POST(request: NextRequest) {
         });
 
         await recomputeChartAccountsState(auth.accountingId, [chartAccount.id]);
+        const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
 
         return success({
           mapping: {
@@ -313,6 +318,7 @@ export async function POST(request: NextRequest) {
             line_key: mapping.line_key,
             account_code_snapshot: mapping.account_code_snapshot,
           },
+          mappingVersion,
         });
       }
 
@@ -357,6 +363,7 @@ export async function POST(request: NextRequest) {
       }
 
       await recomputeChartAccountsState(auth.accountingId, [chartAccount.id]);
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
 
       return success({
         mapping: {
@@ -364,6 +371,7 @@ export async function POST(request: NextRequest) {
           account_name: chartAccount.name,
           category,
         },
+        mappingVersion,
       });
     }
 
@@ -407,10 +415,12 @@ export async function POST(request: NextRequest) {
         });
 
         await recomputeChartAccountsState(auth.accountingId, ids);
+        const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
 
         return success({
           removed: true,
           removed_count: ids.length,
+          mappingVersion,
         });
       }
 
@@ -436,10 +446,12 @@ export async function POST(request: NextRequest) {
         auth.accountingId,
         chartAccounts.map((account) => account.id)
       );
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
 
       return success({
         removed: true,
         removed_count: chartAccounts.length,
+        mappingVersion,
       });
     }
 
@@ -494,7 +506,8 @@ export async function POST(request: NextRequest) {
           auth.accountingId,
           records.map((record) => record.chart_account_id)
         );
-        return success({ imported: records.length });
+        const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+        return success({ imported: records.length, mappingVersion });
       }
 
       const sourceMappings =
@@ -576,7 +589,8 @@ export async function POST(request: NextRequest) {
       }
 
       const synced = await syncGlobalFlags(auth.accountingId);
-      return success({ imported: records.length, synced });
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      return success({ imported: records.length, synced, mappingVersion });
     }
 
     if (body.action === "auto-classify") {
@@ -638,11 +652,13 @@ export async function POST(request: NextRequest) {
       }
 
       const synced = await syncGlobalFlags(auth.accountingId);
-      return success({ imported: records.length, synced });
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      return success({ imported: records.length, synced, mappingVersion });
     }
 
       const synced = await syncGlobalFlags(auth.accountingId);
-      return success({ synced });
+      const mappingVersion = await bumpAccountingMappingVersion(auth.accountingId);
+      return success({ synced, mappingVersion });
   } catch (err) {
     return handleError(err);
   }

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   BellRing,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
   Eye,
@@ -31,7 +32,16 @@ type ClientInbox = {
   name: string;
   cnpj: string;
   industry: string;
+  unreadCount: number;
+  documentCount: number;
   documents: ClientDocument[];
+};
+
+type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 function formatDateTime(value: string) {
@@ -74,6 +84,14 @@ export default function DocumentosPage() {
   const [clients, setClients] = useState<ClientInbox[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 1,
+  });
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
 
@@ -84,11 +102,32 @@ export default function DocumentosPage() {
       setLoading(true);
 
       try {
-        const response = await fetch("/api/documents", { cache: "no-store" });
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: "50",
+        });
+        if (deferredQuery.trim()) {
+          params.set("query", deferredQuery.trim());
+        }
+
+        const response = await fetch(`/api/documents?${params.toString()}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to load documents");
 
-        const payload = (await response.json()) as { clients?: ClientInbox[] };
-        if (active) setClients(payload.clients ?? []);
+        const payload = (await response.json()) as {
+          clients?: ClientInbox[];
+          pagination?: Pagination;
+        };
+        if (active) {
+          setClients(payload.clients ?? []);
+          setPagination(
+            payload.pagination ?? {
+              page,
+              pageSize: 50,
+              total: payload.clients?.length ?? 0,
+              totalPages: 1,
+            }
+          );
+        }
       } catch {
         if (active) setClients([]);
       } finally {
@@ -101,31 +140,18 @@ export default function DocumentosPage() {
     return () => {
       active = false;
     };
-  }, []);
-
-  const filteredClients = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return clients;
-
-    return clients.filter((client) => {
-      const clientMatch = [client.name, client.cnpj, client.industry]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized);
-      const docMatch = client.documents.some((document) =>
-        [document.title, document.category, document.description]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalized)
-      );
-      return clientMatch || docMatch;
-    });
-  }, [clients, query]);
+  }, [deferredQuery, page]);
 
   const selectedClient = useMemo(
     () => clients.find((client) => client.id === selectedClientId) ?? null,
     [clients, selectedClientId]
   );
+
+  useEffect(() => {
+    if (!selectedClientId || selectedClient || clients.length === 0) return;
+    setSelectedClientId(clients[0].id);
+    setSelectedDocumentId(null);
+  }, [clients, selectedClient, selectedClientId]);
 
   const selectedDocument = useMemo(() => {
     if (!selectedClient || !selectedDocumentId) return null;
@@ -143,10 +169,14 @@ export default function DocumentosPage() {
     return Object.fromEntries(
       clients.map((client) => [
         client.id,
-        client.documents.filter((document) => !document.viewed).length,
+        client.unreadCount,
       ])
     ) as Record<string, number>;
   }, [clients]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [deferredQuery]);
 
   function openClient(clientId: string) {
     setSelectedClientId(clientId);
@@ -243,20 +273,20 @@ export default function DocumentosPage() {
               <h2 className="text-lg font-bold text-white">Clientes com documentos</h2>
               <p className="text-sm text-slate-400">
                 Clique em um card para ver os anexos recebidos.
-              </p>
-            </div>
-            <div className="text-sm text-slate-500">
-              {loading ? "Carregando..." : `${filteredClients.length} cliente(s)`}
-            </div>
+            </p>
           </div>
+          <div className="text-sm text-slate-500">
+              {loading ? "Carregando..." : `${pagination.total} cliente(s)`}
+          </div>
+        </div>
 
           <div className="grid gap-4 xl:grid-cols-3">
-            {!loading && filteredClients.length === 0 ? (
+            {!loading && clients.length === 0 ? (
               <div className="col-span-full rounded-[1.5rem] border border-dashed border-white/10 bg-white/3 px-5 py-10 text-center text-sm text-slate-500">
                 Nenhum documento encontrado.
               </div>
             ) : (
-              filteredClients.map((client) => {
+              clients.map((client) => {
                 const unreadCount = unreadByClient[client.id] ?? 0;
                 const latestDocument = [...client.documents].sort(
                   (left, right) =>
@@ -300,7 +330,7 @@ export default function DocumentosPage() {
                           Documentos
                         </p>
                         <p className="mt-2 text-xl font-black text-white">
-                          {client.documents.length}
+                          {client.documentCount}
                         </p>
                       </div>
                       <div className="rounded-2xl border border-white/6 bg-white/3 px-4 py-3">
@@ -331,6 +361,34 @@ export default function DocumentosPage() {
                 );
               })
             )}
+          </div>
+
+          <div className="mt-5 flex items-center justify-between rounded-2xl border border-white/6 bg-white/3 px-4 py-3 text-sm text-slate-300">
+            <span>
+              Pagina {pagination.page} de {pagination.totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={pagination.page <= 1 || loading}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Anterior
+              </button>
+              <button
+                type="button"
+                disabled={pagination.page >= pagination.totalPages || loading}
+                onClick={() =>
+                  setPage((current) => Math.min(pagination.totalPages, current + 1))
+                }
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Proxima
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </section>

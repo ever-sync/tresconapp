@@ -10,6 +10,13 @@ import {
   resolveDreCategory,
 } from "@/lib/dre-statement";
 import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
+import {
+  completeImportBatch,
+  failImportBatch,
+  openImportBatch,
+  rebuildStatements,
+  updateImportBatchProgress,
+} from "@/lib/statement-snapshots";
 
 /**
  * Batch import of movements.
@@ -37,11 +44,20 @@ const batchImportSchema = z.object({
   total_batches: z.number().int().min(1),
 });
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 export async function POST(request: NextRequest) {
+  let importBatchId: string | undefined;
   try {
     const auth = await requireStaff();
     const body = await request.json();
     const data = batchImportSchema.parse(body);
+    const kinds = new Set(data.rows.map((row) => row.type));
+    const importKind =
+      kinds.size === 1
+        ? `${data.rows[0]?.type ?? "movements"}_movements`
+        : "mixed_movements";
 
     const client = await prisma.client.findFirst({
       where: {
@@ -54,6 +70,15 @@ export async function POST(request: NextRequest) {
     if (!client) {
       return success({ error: "Cliente não encontrado" }, 404);
     }
+
+    const importBatch = await openImportBatch({
+      accountingId: auth.accountingId,
+      clientId: data.client_id,
+      year: data.year,
+      kind: importKind,
+      batchIndex: data.batch_index,
+    });
+    importBatchId = importBatch.id;
 
     const [globalAccounts, clientAccounts, globalDreMappings, clientDreMappings, globalPatrimonialMappings, clientPatrimonialMappings] =
       await Promise.all([
@@ -227,7 +252,20 @@ export async function POST(request: NextRequest) {
       )
     );
 
+    await updateImportBatchProgress({
+      batchId: importBatch.id,
+      processedRows: results.length,
+    });
+
     if (data.batch_index === data.total_batches - 1) {
+      await completeImportBatch({ batchId: importBatch.id });
+      await rebuildStatements({
+        accountingId: auth.accountingId,
+        clientId: data.client_id,
+        year: data.year,
+        statementType: "all",
+      });
+
       await recordAuditEvent({
         actorType: "staff",
         actorRole: auth.role,
@@ -253,6 +291,10 @@ export async function POST(request: NextRequest) {
       total_batches: data.total_batches,
     });
   } catch (err) {
+    await failImportBatch({
+      batchId: importBatchId,
+      errorMessage: err instanceof Error ? err.message : "Falha ao importar movimentacoes",
+    });
     return handleError(err);
   }
 }

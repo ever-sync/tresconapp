@@ -6,6 +6,15 @@ import { requireClient, requireStaff } from "@/lib/auth-guard";
 import { success, error, handleError } from "@/lib/api-response";
 import { createNotification } from "@/lib/notification-service";
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
+function parsePositiveInt(value: string | null, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
 const audienceSchema = z.enum(["staff", "client"]);
 
 function formatSize(bytes: number) {
@@ -125,42 +134,90 @@ export async function GET(request: NextRequest) {
     const audience = audienceResult.data;
     const auth = audience === "staff" ? await requireStaff() : await requireClient();
     const clientId = auth.clientId;
+    const page = parsePositiveInt(request.nextUrl.searchParams.get("page"), 1);
+    const pageSize = Math.min(parsePositiveInt(request.nextUrl.searchParams.get("pageSize"), 50), 100);
+    const query = request.nextUrl.searchParams.get("query")?.trim() ?? "";
+    const status = request.nextUrl.searchParams.get("status");
 
     if (audience === "client" && !clientId) {
       return error("Cliente nao encontrado", 404);
     }
 
-    const tickets = await prisma.supportTicket.findMany({
-      where:
-        audience === "staff"
-          ? { accounting_id: auth.accountingId }
-          : { accounting_id: auth.accountingId, client_id: clientId },
-      orderBy: { updated_at: "desc" },
-      include: {
-        client: {
-          select: { id: true, name: true, cnpj: true },
-        },
-        messages: {
-          orderBy: { created_at: "asc" },
-        },
-        documents: {
-          orderBy: { created_at: "asc" },
-          include: {
-            document: {
-              select: {
-                id: true,
-                display_name: true,
-                category: true,
-                description: true,
-                original_name: true,
-                mime_type: true,
-                size_bytes: true,
+    const baseWhere = {
+      ...(audience === "staff"
+        ? { accounting_id: auth.accountingId }
+        : { accounting_id: auth.accountingId, client_id: clientId }),
+      ...(query
+        ? {
+            OR: [
+              { subject: { contains: query, mode: "insensitive" as const } },
+              { message: { contains: query, mode: "insensitive" as const } },
+              {
+                client: {
+                  is: {
+                    name: { contains: query, mode: "insensitive" as const },
+                  },
+                },
+              },
+              {
+                client: {
+                  is: {
+                    cnpj: { contains: query, mode: "insensitive" as const },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const where = {
+      ...baseWhere,
+      ...(status && status !== "all"
+        ? { status: status as "open" | "in_progress" | "closed" }
+        : {}),
+    };
+
+    const [tickets, total, statusGroups] = await Promise.all([
+      prisma.supportTicket.findMany({
+        where,
+        orderBy: { updated_at: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          client: {
+            select: { id: true, name: true, cnpj: true },
+          },
+          messages: {
+            orderBy: { created_at: "asc" },
+          },
+          documents: {
+            orderBy: { created_at: "asc" },
+            include: {
+              document: {
+                select: {
+                  id: true,
+                  display_name: true,
+                  category: true,
+                  description: true,
+                  original_name: true,
+                  mime_type: true,
+                  size_bytes: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      }),
+      prisma.supportTicket.count({ where }),
+      prisma.supportTicket.groupBy({
+        by: ["status"],
+        where: baseWhere,
+        _count: {
+          _all: true,
+        },
+      }),
+    ]);
 
     const unreadCounts = await loadUnreadCounts(
       auth.accountingId,
@@ -175,6 +232,19 @@ export async function GET(request: NextRequest) {
           unreadCount: unreadCounts.get(ticket.id) ?? 0,
         })
       ),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+      counters: {
+        open: statusGroups.find((item) => item.status === "open")?._count._all ?? 0,
+        in_progress:
+          statusGroups.find((item) => item.status === "in_progress")?._count._all ?? 0,
+        closed: statusGroups.find((item) => item.status === "closed")?._count._all ?? 0,
+        all: statusGroups.reduce((totalCount, item) => totalCount + item._count._all, 0),
+      },
     });
   } catch (err) {
     return handleError(err);

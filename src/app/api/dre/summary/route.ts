@@ -2,8 +2,11 @@ import { NextRequest } from "next/server";
 
 import prisma from "@/lib/prisma";
 import { requireClient } from "@/lib/auth-guard";
-import { buildDreStatement, emptyDreStatement } from "@/lib/dre-statement";
 import { success, handleError } from "@/lib/api-response";
+import { getDreSnapshotEnvelope } from "@/lib/statement-snapshots";
+
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
 
 function parseYear(value: string | null): number | null {
   if (!value) return null;
@@ -57,102 +60,20 @@ export async function GET(request: NextRequest) {
 
     const year = requestedYear ?? latestMovement?.year ?? new Date().getFullYear();
 
-    const [movements, globalAccounts, clientAccounts, globalMappings, clientMappings] =
-      await Promise.all([
-        prisma.monthlyMovement.findMany({
-          where: {
-            client_id: client.id,
-            year,
-            deleted_at: null,
-            type: "dre",
-          },
-          orderBy: [{ level: "asc" }, { code: "asc" }],
-          select: {
-            code: true,
-            reduced_code: true,
-            name: true,
-            level: true,
-            values: true,
-            type: true,
-            category: true,
-          },
-        }),
-        prisma.chartOfAccounts.findMany({
-          where: {
-            accounting_id: auth.accountingId,
-            client_id: null,
-          },
-          orderBy: [{ level: "asc" }, { code: "asc" }],
-          select: {
-            code: true,
-            reduced_code: true,
-            name: true,
-            report_category: true,
-            report_type: true,
-            level: true,
-          },
-        }),
-        prisma.chartOfAccounts.findMany({
-          where: {
-            accounting_id: auth.accountingId,
-            client_id: client.id,
-          },
-          orderBy: [{ level: "asc" }, { code: "asc" }],
-          select: {
-            code: true,
-            reduced_code: true,
-            name: true,
-            report_category: true,
-            report_type: true,
-            level: true,
-          },
-        }),
-        prisma.dREMapping.findMany({
-          where: {
-            accounting_id: auth.accountingId,
-            client_id: null,
-          },
-          select: {
-            account_code: true,
-            category: true,
-            client_id: true,
-          },
-        }),
-        prisma.dREMapping.findMany({
-          where: {
-            accounting_id: auth.accountingId,
-            client_id: client.id,
-          },
-          select: {
-            account_code: true,
-            category: true,
-            client_id: true,
-          },
-        }),
-      ]);
-
-    const typedMovements = movements.map((movement) => ({
-      ...movement,
-      type: movement.type as "dre" | "patrimonial",
-    }));
-
-    if (typedMovements.length === 0) {
-      return success({
-        ...emptyDreStatement(year),
-        year,
-        activeMonthIndex: requestedMonth ?? 0,
-      });
-    }
-
-    const statement = buildDreStatement({
+    const envelope = await getDreSnapshotEnvelope({
+      accountingId: auth.accountingId,
+      clientId: client.id,
       year,
-      movements: typedMovements,
-      chartAccounts: [...globalAccounts, ...clientAccounts],
-      mappings: [...globalMappings, ...clientMappings],
-      activeMonthIndex: requestedMonth ?? undefined,
+      requestedMonth: requestedMonth ?? undefined,
     });
 
-    return success(statement);
+    return success({
+      ...envelope.payload,
+      stale: envelope.stale,
+      snapshotStatus: envelope.snapshotStatus,
+      mappingVersion: envelope.mappingVersion,
+      computedAt: envelope.computedAt,
+    });
   } catch (err) {
     return handleError(err);
   }

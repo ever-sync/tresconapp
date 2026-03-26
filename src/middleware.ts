@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Routes that require staff authentication
-const staffRoutes = ["/dashboard", "/clients"];
+const staffRoutes = ["/dashboard"];
 // Routes that require client authentication
 const clientRoutes = ["/portal"];
 // Public-only routes (redirect if already authenticated)
@@ -48,7 +48,6 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/dashboard/:path*",
-    "/clients/:path*",
     "/portal/:path*",
     "/login",
     "/register",

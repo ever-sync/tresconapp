@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Check, Loader2, Plus, Save, Search, Sparkles, Trash2, UploadCloud, X } from "lucide-react";
+import { Check, Loader2, Plus, Save, Search, Trash2, X } from "lucide-react";
 
 type ParametrizationKind = "dre" | "patrimonial" | "dfc";
 
@@ -22,102 +21,6 @@ function kindLabel(kind: ParametrizationKind) {
   return "DFC";
 }
 
-export function ParametrizationActions({
-  kind,
-  sourceClientId,
-  importLabel,
-  autoLabel,
-  saveLabel,
-  disabled = false,
-}: {
-  kind: ParametrizationKind;
-  sourceClientId?: string | null;
-  importLabel: string;
-  autoLabel: string;
-  saveLabel: string;
-  disabled?: boolean;
-}) {
-  const router = useRouter();
-  const [loadingAction, setLoadingAction] = useState<"import" | "auto" | "save" | null>(null);
-
-  async function run(action: "import-base" | "auto-classify" | "sync") {
-    setLoadingAction(action === "import-base" ? "import" : action === "auto-classify" ? "auto" : "save");
-
-    try {
-      const response = await fetch("/api/parametrization", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          kind,
-          sourceClientId: sourceClientId ?? undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Falha ao executar a acao");
-      }
-
-      router.refresh();
-      window.dispatchEvent(new Event("parametrization:changed"));
-    } catch (err) {
-      console.error(err);
-      window.alert(err instanceof Error ? err.message : "Falha ao executar a acao");
-    } finally {
-      setLoadingAction(null);
-    }
-  }
-
-  const actionDisabled = disabled || loadingAction !== null;
-
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <button
-        type="button"
-        onClick={() => run("import-base")}
-        disabled={actionDisabled}
-        className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm font-bold text-cyan-300 transition hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {loadingAction === "import" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <UploadCloud className="h-4 w-4" />
-        )}
-        {importLabel}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => run("auto-classify")}
-        disabled={actionDisabled}
-        className="inline-flex items-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-300 transition hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {loadingAction === "auto" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Sparkles className="h-4 w-4" />
-        )}
-        {autoLabel}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => run("sync")}
-        disabled={actionDisabled}
-        className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.25)] disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {loadingAction === "save" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Save className="h-4 w-4" />
-        )}
-        {saveLabel}
-      </button>
-    </div>
-  );
-}
-
 export function ParametrizationAddButton({
   kind,
   target,
@@ -131,7 +34,6 @@ export function ParametrizationAddButton({
   disabled?: boolean;
   onSaved?: (account: AccountOption) => void;
 }) {
-  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -243,14 +145,10 @@ export function ParametrizationAddButton({
           if (disabled) return;
           setOpen(true);
         }}
-        disabled={loading || disabled}
+        disabled={disabled}
         className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.22em] text-cyan-300 transition hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Plus className="h-3.5 w-3.5" />
-        )}
+        <Plus className="h-3.5 w-3.5" />
         {label}
       </button>
 

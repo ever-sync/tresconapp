@@ -4,6 +4,13 @@ import prisma from "@/lib/prisma";
 import { requireStaff } from "@/lib/auth-guard";
 import { recordAuditEvent } from "@/lib/audit";
 import { success, handleError, getClientIp, getUserAgent } from "@/lib/api-response";
+import {
+  bumpAccountingMappingVersion,
+  completeImportBatch,
+  failImportBatch,
+  openImportBatch,
+  updateImportBatchProgress,
+} from "@/lib/statement-snapshots";
 
 /**
  * Batch import of Chart of Accounts.
@@ -30,7 +37,11 @@ const batchImportSchema = z.object({
   total_batches: z.number().int().min(1),
 });
 
+export const runtime = "nodejs";
+export const preferredRegion = "iad1";
+
 export async function POST(request: NextRequest) {
+  let importBatchId: string | undefined;
   try {
     const auth = await requireStaff();
     const body = await request.json();
@@ -49,6 +60,14 @@ export async function POST(request: NextRequest) {
         return success({ error: "Cliente não encontrado" }, 404);
       }
     }
+
+    const importBatch = await openImportBatch({
+      accountingId: auth.accountingId,
+      clientId: data.client_id,
+      kind: data.client_id ? "chart_of_accounts_client" : "chart_of_accounts_global",
+      batchIndex: data.batch_index,
+    });
+    importBatchId = importBatch.id;
 
     // Upsert by accounting_id + code (unique constraint)
     const results = await prisma.$transaction(
@@ -88,7 +107,17 @@ export async function POST(request: NextRequest) {
       )
     );
 
+    await updateImportBatchProgress({
+      batchId: importBatch.id,
+      processedRows: results.length,
+    });
+
     if (data.batch_index === data.total_batches - 1) {
+      await completeImportBatch({ batchId: importBatch.id });
+      if (!data.client_id) {
+        await bumpAccountingMappingVersion(auth.accountingId);
+      }
+
       await recordAuditEvent({
         actorType: "staff",
         actorRole: auth.role,
@@ -112,6 +141,10 @@ export async function POST(request: NextRequest) {
       total_batches: data.total_batches,
     });
   } catch (err) {
+    await failImportBatch({
+      batchId: importBatchId,
+      errorMessage: err instanceof Error ? err.message : "Falha ao importar plano de contas",
+    });
     return handleError(err);
   }
 }

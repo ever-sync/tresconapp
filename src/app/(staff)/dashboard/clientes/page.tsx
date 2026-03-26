@@ -5,7 +5,6 @@ import type { ComponentType, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import {
   BadgeCheck,
-  BadgeDollarSign,
   BriefcaseBusiness,
   Building,
   Building2,

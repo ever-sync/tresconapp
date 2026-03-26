@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   CheckCheck,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Clock3,
   Filter,
@@ -62,6 +64,20 @@ type SupportTicket = {
   unreadCount: number;
   messages: SupportMessage[];
   documents: SupportDocument[];
+};
+
+type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+type TicketCounters = {
+  open: number;
+  in_progress: number;
+  closed: number;
+  all: number;
 };
 
 function formatDateTime(value: string) {
@@ -124,7 +140,21 @@ export function SupportCenter({
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [filter, setFilter] = useState<"all" | TicketStatus>("all");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 1,
+  });
+  const [counters, setCounters] = useState<TicketCounters>({
+    open: 0,
+    in_progress: 0,
+    closed: 0,
+    all: 0,
+  });
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [replyAttachment, setReplyAttachment] = useState<File | null>(null);
@@ -140,15 +170,45 @@ export function SupportCenter({
     async function loadTickets() {
       setLoading(true);
       try {
-        const response = await fetch(`/api/support/tickets?audience=${audience}`, {
+        const params = new URLSearchParams({
+          audience,
+          page: String(page),
+          pageSize: "50",
+          status: filter,
+        });
+        if (deferredQuery.trim()) {
+          params.set("query", deferredQuery.trim());
+        }
+
+        const response = await fetch(`/api/support/tickets?${params.toString()}`, {
           cache: "no-store",
         });
 
         if (!response.ok) throw new Error("Nao foi possivel carregar os chamados");
 
-        const payload = (await response.json()) as { tickets?: SupportTicket[] };
+        const payload = (await response.json()) as {
+          tickets?: SupportTicket[];
+          pagination?: Pagination;
+          counters?: TicketCounters;
+        };
         if (active) {
           setTickets(payload.tickets ?? []);
+          setPagination(
+            payload.pagination ?? {
+              page,
+              pageSize: 50,
+              total: payload.tickets?.length ?? 0,
+              totalPages: 1,
+            }
+          );
+          setCounters(
+            payload.counters ?? {
+              open: 0,
+              in_progress: 0,
+              closed: 0,
+              all: 0,
+            }
+          );
           setSelectedTicketId((current) => current ?? payload.tickets?.[0]?.id ?? null);
         }
       } catch {
@@ -163,23 +223,7 @@ export function SupportCenter({
     return () => {
       active = false;
     };
-  }, [audience]);
-
-  const filteredTickets = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-
-    return tickets.filter((ticket) => {
-      const statusMatch = filter === "all" ? true : ticket.status === filter;
-      const textMatch = !normalized
-        ? true
-        : [ticket.client.name, ticket.subject, ticket.message]
-            .join(" ")
-            .toLowerCase()
-            .includes(normalized);
-
-      return statusMatch && textMatch;
-    });
-  }, [filter, query, tickets]);
+  }, [audience, deferredQuery, filter, page]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedTicketId) ?? null,
@@ -187,29 +231,40 @@ export function SupportCenter({
   );
 
   useEffect(() => {
-    if (!selectedTicketId && filteredTickets[0]) {
-      setSelectedTicketId(filteredTickets[0].id);
+    if ((!selectedTicketId || !selectedTicket) && tickets[0]) {
+      setSelectedTicketId(tickets[0].id);
     }
-  }, [filteredTickets, selectedTicketId]);
+  }, [selectedTicket, selectedTicketId, tickets]);
 
-  const counters = useMemo(() => {
-    return {
-      open: tickets.filter((ticket) => ticket.status === "open").length,
-      in_progress: tickets.filter((ticket) => ticket.status === "in_progress").length,
-      closed: tickets.filter((ticket) => ticket.status === "closed").length,
-      all: tickets.length,
-    };
-  }, [tickets]);
+  useEffect(() => {
+    setPage(1);
+  }, [deferredQuery, filter]);
 
   async function refreshTickets(nextSelectedId?: string | null) {
-    const response = await fetch(`/api/support/tickets?audience=${audience}`, {
+    const params = new URLSearchParams({
+      audience,
+      page: String(page),
+      pageSize: "50",
+      status: filter,
+    });
+    if (deferredQuery.trim()) {
+      params.set("query", deferredQuery.trim());
+    }
+
+    const response = await fetch(`/api/support/tickets?${params.toString()}`, {
       cache: "no-store",
     });
 
     if (!response.ok) return;
 
-    const payload = (await response.json()) as { tickets?: SupportTicket[] };
+    const payload = (await response.json()) as {
+      tickets?: SupportTicket[];
+      pagination?: Pagination;
+      counters?: TicketCounters;
+    };
     setTickets(payload.tickets ?? []);
+    if (payload.pagination) setPagination(payload.pagination);
+    if (payload.counters) setCounters(payload.counters);
     setSelectedTicketId(nextSelectedId ?? (payload.tickets?.[0]?.id ?? null));
   }
 
@@ -421,7 +476,7 @@ export function SupportCenter({
             <div className="flex items-center justify-between border-b border-white/6 px-5 py-4">
               <div>
                 <h2 className="text-base font-bold text-white">Chamados recentes</h2>
-                <p className="text-sm text-slate-500">{filteredTickets.length} chamado(s)</p>
+                <p className="text-sm text-slate-500">{pagination.total} chamado(s)</p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-slate-400">
                 <Filter className="h-4 w-4" />
@@ -445,12 +500,12 @@ export function SupportCenter({
                 <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-white/3 px-5 py-10 text-center text-sm text-slate-500">
                   Carregando chamados...
                 </div>
-              ) : filteredTickets.length === 0 ? (
+              ) : tickets.length === 0 ? (
                 <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-white/3 px-5 py-10 text-center text-sm text-slate-500">
                   Nenhum chamado encontrado.
                 </div>
               ) : (
-                filteredTickets.map((ticket) => {
+                tickets.map((ticket) => {
                   const active = selectedTicketId === ticket.id;
                   const unread = ticket.unreadCount > 0;
 
@@ -517,6 +572,36 @@ export function SupportCenter({
                   );
                 })
               )}
+            </div>
+
+            <div className="border-t border-white/6 px-4 py-4">
+              <div className="flex items-center justify-between rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
+                <span>
+                  Pagina {pagination.page} de {pagination.totalPages}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={pagination.page <= 1 || loading}
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pagination.page >= pagination.totalPages || loading}
+                    onClick={() =>
+                      setPage((current) => Math.min(pagination.totalPages, current + 1))
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Proxima
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 

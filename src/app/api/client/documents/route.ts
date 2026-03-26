@@ -5,6 +5,12 @@ import { requireClient } from "@/lib/auth-guard";
 import { success, error, handleError } from "@/lib/api-response";
 import { createNotification } from "@/lib/notification-service";
 
+function parsePositiveInt(value: string | null, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
@@ -39,7 +45,7 @@ function formatDocument(document: {
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const auth = await requireClient();
     const clientId = auth.clientId;
@@ -47,17 +53,57 @@ export async function GET() {
       return error("Cliente nao encontrado", 404);
     }
 
-    const documents = await prisma.clientDocument.findMany({
-      where: {
-        accounting_id: auth.accountingId,
-        client_id: clientId,
-        deleted_at: null,
-      },
-      orderBy: { created_at: "desc" },
-    });
+    const searchParams = request.nextUrl.searchParams;
+    const page = parsePositiveInt(searchParams.get("page"), 1);
+    const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), 50), 100);
+    const query = searchParams.get("query")?.trim() ?? "";
+
+    const where = {
+      accounting_id: auth.accountingId,
+      client_id: clientId,
+      deleted_at: null,
+      ...(query
+        ? {
+            OR: [
+              { display_name: { contains: query, mode: "insensitive" as const } },
+              { category: { contains: query, mode: "insensitive" as const } },
+              { description: { contains: query, mode: "insensitive" as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [documents, total, unreadTotal] = await Promise.all([
+      prisma.clientDocument.findMany({
+        where,
+        orderBy: { created_at: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.clientDocument.count({ where }),
+      prisma.clientDocument.count({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: clientId,
+          deleted_at: null,
+          viewed_at: null,
+        },
+      }),
+    ]);
 
     return success({
       documents: documents.map(formatDocument),
+      counters: {
+        total,
+        unread: unreadTotal,
+        viewed: Math.max(0, total - unreadTotal),
+      },
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
     });
   } catch (err) {
     return handleError(err);

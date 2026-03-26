@@ -1,11 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -13,12 +11,14 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   BarChart3,
   Download,
   FileDown,
   FileUp,
   Landmark,
   List,
+  LoaderCircle,
   UploadCloud,
 } from "lucide-react";
 
@@ -26,167 +26,205 @@ import { cn } from "@/lib/utils";
 
 type ViewMode = "lista" | "graficos" | "fechado";
 
+type DfcRow = {
+  key: string;
+  label: string;
+  section: string;
+  kind: "section" | "row" | "subtotal";
+  level: number;
+  monthly: number[];
+  accumulated: number;
+  percent: number | null;
+};
+
+type DfcResponse = {
+  year: number;
+  monthLabels: string[];
+  activeMonthIndex: number;
+  status: "ready" | "partial";
+  warnings: string[];
+  rows: DfcRow[];
+  closedRows: Array<{ label: string; value: number }>;
+  cards: Array<{ label: string; value: number }>;
+  stale: boolean;
+  snapshotStatus: string;
+  mappingVersion: number;
+  computedAt: string;
+};
+
 const tabs: Array<{ id: ViewMode; label: string; icon: typeof List }> = [
   { id: "lista", label: "Lista", icon: List },
-  { id: "graficos", label: "Gráficos", icon: BarChart3 },
+  { id: "graficos", label: "Graficos", icon: BarChart3 },
   { id: "fechado", label: "Fechado", icon: FileDown },
 ];
 
-const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-const years = [2026];
-
-const zeroSeries = months.map((month) => ({
-  month,
-  value: 0,
-}));
-
-const uploadCards = [
-  { label: "Arquivo por mês e ano", note: "Nenhum balancete enviado ainda." },
+const CARD_TONES = [
+  { stroke: "#1fc8ff", fill: "rgba(31,200,255,0.16)" },
+  { stroke: "#ff2d6f", fill: "rgba(255,45,111,0.16)" },
+  { stroke: "#f59e0b", fill: "rgba(245,158,11,0.16)" },
+  { stroke: "#2f76ff", fill: "rgba(47,118,255,0.16)" },
+  { stroke: "#10b981", fill: "rgba(16,185,129,0.16)" },
+  { stroke: "#a855f7", fill: "rgba(168,85,247,0.16)" },
 ];
+const EMPTY_ROWS: DfcRow[] = [];
+const EMPTY_CARDS: Array<{ label: string; value: number }> = [];
 
-const chartCards = [
-  { label: "Resultado Contábil", value: "R$ 0,00", stroke: "#1fc8ff", fill: "rgba(31,200,255,0.16)" },
-  { label: "Resultado Operacional", value: "R$ 0,00", stroke: "#ff2d6f", fill: "rgba(255,45,111,0.16)" },
-  { label: "Resultado de Investimento", value: "R$ 0,00", stroke: "#f59e0b", fill: "rgba(245,158,11,0.16)" },
-  { label: "Resultado Financeiro", value: "R$ 0,00", stroke: "#2f76ff", fill: "rgba(47,118,255,0.16)" },
-  { label: "Resultado Geração de Caixa", value: "R$ 0,00", stroke: "#10b981", fill: "rgba(16,185,129,0.16)" },
-  { label: "Saldo Final Disponível", value: "R$ 0,00", stroke: "#a855f7", fill: "rgba(168,85,247,0.16)" },
-];
-
-const closedCards = [
-  { label: "Resultado Contábil", value: "R$ 0,00" },
-  { label: "Resultado Operacional", value: "R$ 0,00" },
-  { label: "Resultado de Investimento", value: "R$ 0,00" },
-  { label: "Resultado Financeiro", value: "R$ 0,00" },
-  { label: "Resultado Geração de Caixa", value: "R$ 0,00" },
-  { label: "Saldo Final Disponível", value: "R$ 0,00" },
-];
-
-const sections = [
-  "Resultado Contábil",
-  "Fluxos de Caixa Originários de Atividades Operacionais",
-  "Fluxos de Caixa Originários de Atividades de Investimentos",
-  "Fluxos de Caixa Originários de Atividades de Financiamentos",
-  "Resultado da Geração de Caixa",
-];
-
-const listRows = [
-  { label: "Resultado Contábil", level: 0, tone: "cyan", kind: "section" },
-  { label: "Resultado Líquido do Exercício", level: 1, tone: "muted", kind: "row" },
-  { label: "Depreciação e Amortização", level: 1, tone: "muted", kind: "row" },
-  { label: "Resultado da Venda de Ativo Imobilizado", level: 1, tone: "muted", kind: "row" },
-  { label: "Resultado da Equivalência Patrimonial", level: 1, tone: "muted", kind: "row" },
-  { label: "Recebimentos de Lucros e Dividendos de Subsidiárias", level: 1, tone: "muted", kind: "row" },
-  { label: "Lucro Ajustado", level: 0, tone: "cyan", kind: "subtotal" },
-  { label: "Fluxos de Caixa Originários de Atividades Operacionais", level: 0, tone: "cyan", kind: "section" },
-  { label: "Variação Ativo", level: 1, tone: "muted", kind: "row" },
-  { label: "Variação Passivo", level: 1, tone: "muted", kind: "row" },
-  { label: "Resultado Operacional", level: 0, tone: "cyan", kind: "subtotal" },
-  { label: "Fluxos de Caixa Originários de Atividades de Investimentos", level: 0, tone: "cyan", kind: "section" },
-  { label: "Recebimentos por Vendas de Ativo Inv./Imob./Intang.", level: 1, tone: "muted", kind: "row" },
-  { label: "Compras de Imobilizado", level: 1, tone: "muted", kind: "row" },
-  { label: "Aquisições em Investimentos", level: 1, tone: "muted", kind: "row" },
-  { label: "Baixa de Ativo Imobilizado", level: 1, tone: "muted", kind: "row" },
-  { label: "Resultado de Investimento", level: 0, tone: "cyan", kind: "subtotal" },
-  { label: "Fluxos de Caixa Originários de Atividades de Financiamentos", level: 0, tone: "cyan", kind: "section" },
-  { label: "Integralização ou Aumento de Capital Social", level: 1, tone: "muted", kind: "row" },
-  { label: "Pagamento de Lucros e Dividendos", level: 1, tone: "muted", kind: "row" },
-  { label: "Variação em Empréstimos/Financiamentos", level: 1, tone: "muted", kind: "row" },
-  { label: "Dividendos Provisionados a Pagar", level: 1, tone: "muted", kind: "row" },
-  { label: "Variação Empréstimos Pessoas Ligadas PJ/PF", level: 1, tone: "muted", kind: "row" },
-  { label: "Resultado Financeiro", level: 0, tone: "cyan", kind: "subtotal" },
-  { label: "Resultado da Geração de Caixa", level: 0, tone: "cyan", kind: "section" },
-  { label: "Saldo Inicial Disponível", level: 1, tone: "muted", kind: "row" },
-  { label: "Saldo Final Disponível", level: 1, tone: "muted", kind: "row" },
-];
-
-function zeroCurrency() {
+function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(0);
+  }).format(value);
 }
 
-function zeroLine({
-  stroke,
-  fill,
-}: {
-  stroke: string;
-  fill: string;
-}) {
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
-        <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-        <Tooltip
-          contentStyle={{
-            background: "rgba(8, 17, 31, 0.96)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 16,
-            color: "#e2e8f0",
-          }}
-          formatter={() => zeroCurrency()}
-        />
-        <Area type="monotone" dataKey="value" stroke={stroke} fill={fill} strokeWidth={2.5} dot={false} />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
+function toSeriesData(labels: string[], values: number[]) {
+  return labels.map((label, index) => ({
+    month: label,
+    value: values[index] ?? 0,
+  }));
 }
 
-function zeroBar({
+function ChartCard({
   label,
+  value,
+  data,
   stroke,
   fill,
 }: {
   label: string;
+  value: number;
+  data: Array<{ month: string; value: number }>;
   stroke: string;
   fill: string;
 }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
-        <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-        <Tooltip
-          contentStyle={{
-            background: "rgba(8, 17, 31, 0.96)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 16,
-            color: "#e2e8f0",
-          }}
-          formatter={() => zeroCurrency()}
-        />
-        <Bar dataKey="value" fill={stroke} radius={[10, 10, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
+    <div className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">
+            {label}
+          </p>
+          <p className="mt-2 text-2xl font-black tracking-tight text-white">
+            {formatCurrency(value)}
+          </p>
+        </div>
 
-function areaColor(tone: string) {
-  switch (tone) {
-    case "cyan":
-      return "text-cyan-300";
-    case "pink":
-      return "text-pink-400";
-    case "orange":
-      return "text-orange-400";
-    default:
-      return "text-slate-500";
-  }
+        <button
+          type="button"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+        >
+          <Landmark className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-5 h-[150px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
+            <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={{
+                background: "rgba(8, 17, 31, 0.96)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 16,
+                color: "#e2e8f0",
+              }}
+              formatter={(current: number | string) => formatCurrency(Number(current) || 0)}
+            />
+            <Area type="monotone" dataKey="value" stroke={stroke} fill={fill} strokeWidth={2.5} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
 
 export default function DfcPage() {
   const [view, setView] = useState<ViewMode>("lista");
   const [month, setMonth] = useState("Jan");
-  const [year, setYear] = useState("2026");
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DfcResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const visibleRows = useMemo(() => listRows, []);
+  useEffect(() => {
+    let active = true;
+
+    async function loadSummary() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const monthIndex = MONTHS.indexOf(month) + 1;
+        const response = await fetch(`/api/dfc/summary?year=${year}&month=${monthIndex}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(payload.error || "Nao foi possivel carregar o DFC");
+        }
+
+        const payload = (await response.json()) as DfcResponse;
+        if (active) {
+          setData(payload);
+          setYear(String(payload.year));
+          setMonth(payload.monthLabels[payload.activeMonthIndex] ?? month);
+        }
+      } catch (err) {
+        if (active) {
+          setData(null);
+          setError(err instanceof Error ? err.message : "Nao foi possivel carregar o DFC");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadSummary();
+
+    return () => {
+      active = false;
+    };
+  }, [month, year]);
+
+  const monthLabels = data?.monthLabels ?? MONTHS;
+  const listRows = data?.rows ?? EMPTY_ROWS;
+  const cards = data?.cards ?? EMPTY_CARDS;
+  const closedRows = data?.closedRows ?? EMPTY_CARDS;
+
+  const chartCards = useMemo(() => {
+    return cards.map((card, index) => {
+      const matchingRow = listRows.find((row) => row.label === card.label);
+      return {
+        ...card,
+        data: toSeriesData(monthLabels, matchingRow?.monthly ?? Array.from({ length: 12 }, () => 0)),
+        ...CARD_TONES[index % CARD_TONES.length],
+      };
+    });
+  }, [cards, listRows, monthLabels]);
+
+  const sectionCards = useMemo(() => {
+    const subtotalRows = listRows.filter((row) => row.kind === "subtotal");
+    return subtotalRows.map((row) => ({
+      label: row.label,
+      value: row.monthly[data?.activeMonthIndex ?? 0] ?? 0,
+    }));
+  }, [data?.activeMonthIndex, listRows]);
+
+  const summaryCards = useMemo(() => {
+    return [
+      cards.find((card) => card.label === "Resultado Contabil"),
+      cards.find((card) => card.label === "Resultado Operacional"),
+      cards.find((card) => card.label === "Saldo Final Disponivel"),
+    ].filter(Boolean) as Array<{ label: string; value: number }>;
+  }, [cards]);
 
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -197,10 +235,10 @@ export default function DfcPage() {
               Balancetes mensais
             </p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-white">
-              Arquivo por mês e ano
+              Arquivo por mes e ano
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Cada envio vira um card. O histórico não sobrescreve o mês anterior.
+              Cada envio vira um card. O historico nao sobrescreve o mes anterior.
             </p>
           </div>
 
@@ -220,14 +258,14 @@ export default function DfcPage() {
 
             <div>
               <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Mês
+                Mes
               </p>
               <select
                 value={month}
                 onChange={(event) => setMonth(event.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
               >
-                {months.map((item) => (
+                {MONTHS.map((item) => (
                   <option key={item} value={item} className="bg-slate-900">
                     {item}
                   </option>
@@ -239,17 +277,11 @@ export default function DfcPage() {
               <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
                 Ano
               </p>
-              <select
+              <input
                 value={year}
                 onChange={(event) => setYear(event.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
-              >
-                {years.map((item) => (
-                  <option key={item} value={item} className="bg-slate-900">
-                    {item}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <button
@@ -273,7 +305,12 @@ export default function DfcPage() {
             <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">
               DFC
             </p>
-            <h2 className="mt-1 text-xl font-bold text-white">Fluxo de Caixa Direto</h2>
+            <h2 className="mt-1 text-xl font-bold text-white">Fluxo de Caixa Indireto</h2>
+            {data && (
+              <p className="mt-1 text-sm text-slate-400">
+                {data.stale ? "Snapshot desatualizado" : "Snapshot pronto"} • versao {data.mappingVersion}
+              </p>
+            )}
           </div>
 
           <div className="flex rounded-2xl border border-white/6 bg-black/20 p-1">
@@ -305,7 +342,7 @@ export default function DfcPage() {
             className="flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
           >
             <UploadCloud className="h-4 w-4" />
-            Importar DFC 2026
+            Importar DFC {year}
           </button>
 
           <button
@@ -315,6 +352,33 @@ export default function DfcPage() {
             <Download className="h-4 w-4" />
           </button>
         </div>
+
+        {loading && (
+          <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            Carregando DFC...
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            {error}
+          </div>
+        )}
+
+        {data?.warnings.length ? (
+          <div className="mt-4 space-y-2">
+            {data.warnings.map((warning) => (
+              <div
+                key={warning}
+                className="flex items-start gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <span>{warning}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       {view === "lista" && (
@@ -323,7 +387,7 @@ export default function DfcPage() {
             <div className="min-w-[1600px]">
               <div className="grid grid-cols-[340px_repeat(12,minmax(78px,1fr))_120px_90px] border-b border-white/8 bg-white/4 px-4 py-4 text-[0.72rem] font-black uppercase tracking-[0.25em] text-slate-400">
                 <div>Linha</div>
-                {months.map((item) => (
+                {monthLabels.map((item) => (
                   <div key={item} className="text-center">
                     {item.toUpperCase()}
                   </div>
@@ -333,9 +397,9 @@ export default function DfcPage() {
               </div>
 
               <div className="divide-y divide-white/6">
-                {visibleRows.map((row) => (
+                {listRows.map((row) => (
                   <div
-                    key={row.label}
+                    key={row.key}
                     className={cn(
                       "grid grid-cols-[340px_repeat(12,minmax(78px,1fr))_120px_90px] items-center px-4 py-4 text-sm",
                       row.kind === "section" ? "bg-white/2" : row.kind === "subtotal" ? "bg-cyan-500/8" : "bg-transparent"
@@ -353,22 +417,24 @@ export default function DfcPage() {
                       </span>
                     </div>
 
-                    {months.map((item) => (
+                    {monthLabels.map((item, index) => (
                       <div
-                        key={`${row.label}-${item}`}
+                        key={`${row.key}-${item}`}
                         className={cn(
                           "text-center font-bold",
                           row.kind === "subtotal" ? "text-cyan-300" : row.level === 0 ? "text-slate-200" : "text-slate-500"
                         )}
                       >
-                        0
+                        {new Intl.NumberFormat("pt-BR").format(row.monthly[index] ?? 0)}
                       </div>
                     ))}
 
                     <div className={cn("text-right font-black", row.kind === "subtotal" ? "text-cyan-300" : "text-white")}>
-                      0
+                      {new Intl.NumberFormat("pt-BR").format(row.accumulated)}
                     </div>
-                    <div className="text-right font-black text-cyan-300">0%</div>
+                    <div className="text-right font-black text-cyan-300">
+                      {row.percent ? `${row.percent.toFixed(1)}%` : "0%"}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -380,32 +446,14 @@ export default function DfcPage() {
       {view === "graficos" && (
         <section className="grid gap-4 md:grid-cols-2">
           {chartCards.map((card) => (
-            <div
+            <ChartCard
               key={card.label}
-              className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">
-                    {card.label}
-                  </p>
-                  <p className="mt-2 text-2xl font-black tracking-tight text-white">
-                    {card.value}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
-                >
-                  <Landmark className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="mt-5 h-[150px]">
-                {zeroLine({ stroke: card.stroke, fill: card.fill })}
-              </div>
-            </div>
+              label={card.label}
+              value={card.value}
+              data={card.data}
+              stroke={card.stroke}
+              fill={card.fill}
+            />
           ))}
         </section>
       )}
@@ -413,7 +461,7 @@ export default function DfcPage() {
       {view === "fechado" && (
         <section className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {closedCards.map((card, index) => (
+            {closedRows.map((card, index) => (
               <div
                 key={card.label}
                 className={cn(
@@ -427,7 +475,7 @@ export default function DfcPage() {
                   {card.label}
                 </p>
                 <p className="mt-3 text-3xl font-black tracking-tight text-white">
-                  {card.value}
+                  {formatCurrency(card.value)}
                 </p>
               </div>
             ))}
@@ -437,20 +485,43 @@ export default function DfcPage() {
             <div className="grid gap-5 md:grid-cols-[1.2fr_1fr]">
               <div className="rounded-[1.6rem] border border-white/6 bg-white/4 p-5">
                 <p className="text-xs font-black uppercase tracking-[0.25em] text-cyan-400">
-                  Resultado Geração de Caixa
+                  Resultado Geracao de Caixa
                 </p>
                 <div className="mt-4 h-[260px]">
-                  {zeroLine({ stroke: "#22d3ee", fill: "rgba(34,211,238,0.16)" })}
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={
+                        toSeriesData(
+                          monthLabels,
+                          listRows.find((row) => row.key === "resultadoGeracaoCaixa")?.monthly ?? Array.from({ length: 12 }, () => 0)
+                        )
+                      }
+                    >
+                      <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="4 4" />
+                      <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        contentStyle={{
+                          background: "rgba(8, 17, 31, 0.96)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          borderRadius: 16,
+                          color: "#e2e8f0",
+                        }}
+                        formatter={(current: number | string) => formatCurrency(Number(current) || 0)}
+                      />
+                      <Area type="monotone" dataKey="value" stroke="#22d3ee" fill="rgba(34,211,238,0.16)" strokeWidth={2.5} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
 
               <div className="space-y-3">
-                {sections.map((section) => (
-                  <div key={section} className="rounded-2xl border border-white/6 bg-white/4 p-4">
+                {sectionCards.map((section) => (
+                  <div key={section.label} className="rounded-2xl border border-white/6 bg-white/4 p-4">
                     <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">
-                      {section}
+                      {section.label}
                     </p>
-                    <p className="mt-2 text-2xl font-black text-white">0</p>
+                    <p className="mt-2 text-2xl font-black text-white">{formatCurrency(section.value)}</p>
                   </div>
                 ))}
               </div>
@@ -460,24 +531,24 @@ export default function DfcPage() {
       )}
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-[1.6rem] border border-cyan-500/20 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-            Resultado Contábil
-          </p>
-          <p className="mt-3 text-3xl font-black tracking-tight text-cyan-300">R$ 0,00</p>
-        </div>
-        <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-            Resultado Operacional
-          </p>
-          <p className="mt-3 text-3xl font-black tracking-tight text-white">R$ 0,00</p>
-        </div>
-        <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-            Saldo Final Disponível
-          </p>
-          <p className="mt-3 text-3xl font-black tracking-tight text-white">R$ 0,00</p>
-        </div>
+        {summaryCards.map((card, index) => (
+          <div
+            key={card.label}
+            className={cn(
+              "rounded-[1.6rem] border p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]",
+              index === 0
+                ? "border-cyan-500/20 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))]"
+                : "border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))]"
+            )}
+          >
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+              {card.label}
+            </p>
+            <p className={cn("mt-3 text-3xl font-black tracking-tight", index === 0 ? "text-cyan-300" : "text-white")}>
+              {formatCurrency(card.value)}
+            </p>
+          </div>
+        ))}
       </section>
     </div>
   );

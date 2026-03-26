@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireClient } from "@/lib/auth-guard";
 import { success, handleError } from "@/lib/api-response";
-import { getPatrimonialSnapshotEnvelope } from "@/lib/statement-snapshots";
+import { getDfcSnapshotEnvelope } from "@/lib/statement-snapshots";
 
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
@@ -46,38 +46,25 @@ export async function GET(request: NextRequest) {
       return success({ error: "Cliente nao encontrado" }, 404);
     }
 
-    const [latestPatrimonialMovement, latestDreMovement] = requestedYear
-      ? [null, null]
-      : await Promise.all([
-          prisma.monthlyMovement.findFirst({
-            where: {
-              client_id: client.id,
-              deleted_at: null,
-              type: "patrimonial",
-            },
-            orderBy: [{ year: "desc" }, { updated_at: "desc" }],
-            select: { year: true },
-          }),
-          prisma.monthlyMovement.findFirst({
-            where: {
-              client_id: client.id,
-              deleted_at: null,
-              type: "dre",
-            },
-            orderBy: [{ year: "desc" }, { updated_at: "desc" }],
-            select: { year: true },
-          }),
-        ]);
+    const latestMovement = requestedYear
+      ? null
+      : await prisma.monthlyMovement.findFirst({
+          where: {
+            client_id: client.id,
+            deleted_at: null,
+            type: "patrimonial",
+          },
+          orderBy: [{ year: "desc" }, { updated_at: "desc" }],
+          select: { year: true },
+        });
 
-    const year =
-      requestedYear ?? latestPatrimonialMovement?.year ?? latestDreMovement?.year ?? new Date().getFullYear();
-    const activeMonthIndex = requestedMonth ?? undefined;
+    const year = requestedYear ?? latestMovement?.year ?? new Date().getFullYear();
 
-    const envelope = await getPatrimonialSnapshotEnvelope({
+    const envelope = await getDfcSnapshotEnvelope({
       accountingId: auth.accountingId,
       clientId: client.id,
       year,
-      requestedMonth: activeMonthIndex,
+      requestedMonth: requestedMonth ?? undefined,
     });
 
     return success({

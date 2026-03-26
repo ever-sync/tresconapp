@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Eye, FileText, Filter, Search, UploadCloud, X } from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Eye, FileText, Filter, Search, UploadCloud, X } from "lucide-react";
 
 import { UploadDropzone } from "@/components/upload-dropzone";
 import { uploadFormDataWithProgress } from "@/lib/upload-request";
@@ -17,6 +17,19 @@ type ClientDocument = {
   mimeType: string;
   viewed: boolean;
   viewedAt: string | null;
+};
+
+type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+type Counters = {
+  total: number;
+  unread: number;
+  viewed: number;
 };
 
 function formatDateTime(value: string) {
@@ -50,6 +63,19 @@ export function ClientDocumentsManager() {
   const [documents, setDocuments] = useState<ClientDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 1,
+  });
+  const [counters, setCounters] = useState<Counters>({
+    total: 0,
+    unread: 0,
+    viewed: 0,
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [category, setCategory] = useState("Geral");
@@ -58,18 +84,54 @@ export function ClientDocumentsManager() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
+    setPage(1);
+  }, [deferredQuery]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadDocuments() {
       setLoading(true);
       try {
-        const response = await fetch("/api/client/documents", { cache: "no-store" });
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: "50",
+        });
+        if (deferredQuery.trim()) {
+          params.set("query", deferredQuery.trim());
+        }
+
+        const response = await fetch(`/api/client/documents?${params.toString()}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Falha ao carregar documentos");
 
-        const payload = (await response.json()) as { documents?: ClientDocument[] };
-        if (active) setDocuments(payload.documents ?? []);
+        const payload = (await response.json()) as {
+          documents?: ClientDocument[];
+          counters?: Counters;
+          pagination?: Pagination;
+        };
+        if (active) {
+          setDocuments(payload.documents ?? []);
+          setCounters(
+            payload.counters ?? {
+              total: 0,
+              unread: 0,
+              viewed: 0,
+            }
+          );
+          setPagination(
+            payload.pagination ?? {
+              page,
+              pageSize: 50,
+              total: payload.documents?.length ?? 0,
+              totalPages: 1,
+            }
+          );
+        }
       } catch {
-        if (active) setDocuments([]);
+        if (active) {
+          setDocuments([]);
+          setCounters({ total: 0, unread: 0, viewed: 0 });
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -80,19 +142,7 @@ export function ClientDocumentsManager() {
     return () => {
       active = false;
     };
-  }, []);
-
-  const filteredDocuments = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return documents;
-
-    return documents.filter((document) =>
-      [document.title, document.category, document.description]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized)
-    );
-  }, [documents, query]);
+  }, [deferredQuery, page]);
 
   const selectedDocument = useMemo(
     () => documents.find((document) => document.id === selectedId) ?? null,
@@ -130,12 +180,9 @@ export function ClientDocumentsManager() {
       setFile(null);
       setDescription("");
       setCategory("Geral");
+      setPage(1);
       if (payload.document) {
-        setDocuments((current) => [payload.document as ClientDocument, ...current]);
-      } else {
-        const refreshed = await fetch("/api/client/documents", { cache: "no-store" });
-        const data = (await refreshed.json()) as { documents?: ClientDocument[] };
-        setDocuments(data.documents ?? []);
+        setDocuments((current) => [payload.document as ClientDocument, ...current].slice(0, 50));
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Falha ao enviar o arquivo");
@@ -250,14 +297,14 @@ export function ClientDocumentsManager() {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                   Total de arquivos
                 </p>
-                <p className="mt-2 text-2xl font-black text-white">{documents.length}</p>
+                <p className="mt-2 text-2xl font-black text-white">{counters.total}</p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-white/4 px-4 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                   Vistos pela contabilidade
                 </p>
                 <p className="mt-2 text-2xl font-black text-emerald-300">
-                  {documents.filter((document) => document.viewed).length}
+                  {counters.viewed}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/6 bg-white/4 px-4 py-4">
@@ -265,7 +312,7 @@ export function ClientDocumentsManager() {
                   Aguardando analise
                 </p>
                 <p className="mt-2 text-2xl font-black text-cyan-300">
-                  {documents.filter((document) => !document.viewed).length}
+                  {counters.unread}
                 </p>
               </div>
             </div>
@@ -281,17 +328,17 @@ export function ClientDocumentsManager() {
               </p>
             </div>
             <div className="text-sm text-slate-500">
-              {loading ? "Carregando..." : `${filteredDocuments.length} arquivo(s)`}
+              {loading ? "Carregando..." : `${pagination.total} arquivo(s)`}
             </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-3">
-            {!loading && filteredDocuments.length === 0 ? (
+            {!loading && documents.length === 0 ? (
               <div className="col-span-full rounded-[1.5rem] border border-dashed border-white/10 bg-white/3 px-5 py-10 text-center text-sm text-slate-500">
                 Nenhum documento encontrado.
               </div>
             ) : (
-              filteredDocuments.map((document) => (
+              documents.map((document) => (
                 <button
                   key={document.id}
                   type="button"
@@ -353,6 +400,34 @@ export function ClientDocumentsManager() {
                 </button>
               ))
             )}
+          </div>
+
+          <div className="mt-5 flex items-center justify-between rounded-2xl border border-white/6 bg-white/3 px-4 py-3 text-sm text-slate-300">
+            <span>
+              Pagina {pagination.page} de {pagination.totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={pagination.page <= 1 || loading}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Anterior
+              </button>
+              <button
+                type="button"
+                disabled={pagination.page >= pagination.totalPages || loading}
+                onClick={() =>
+                  setPage((current) => Math.min(pagination.totalPages, current + 1))
+                }
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Proxima
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </section>
