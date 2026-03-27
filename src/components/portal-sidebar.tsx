@@ -27,7 +27,6 @@ import {
 
 import { cn } from "@/lib/utils";
 import { useClientAuthStore } from "@/stores/useClientAuthStore";
-import { usePortalClient } from "@/components/portal-client-provider";
 
 type NavItem = {
   href: string;
@@ -92,7 +91,6 @@ function NavLink({
 export function PortalSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const client = usePortalClient();
   const logout = useClientAuthStore((state) => state.logout);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -148,9 +146,6 @@ export function PortalSidebar() {
               <div>
                 <p className="text-base font-semibold tracking-tight text-white">
                   TresContas
-                </p>
-                <p className="text-[0.72rem] uppercase tracking-[0.4em] text-slate-500">
-                  {client?.name ?? "Cliente"}
                 </p>
               </div>
             )}
