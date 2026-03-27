@@ -64,6 +64,7 @@ type ImportResponse = {
   status?: "processing" | "ready";
   batchId?: string | null;
   jobId?: string | null;
+  alreadyProcessing?: boolean;
 };
 
 type ImportBatchStatus = {
@@ -326,16 +327,22 @@ function DrePageContent() {
       );
 
       setUploadMessage(
-        `${payload.imported} linha(s) importadas para ${payload.year} em modo ${
-          payload.valuesMode === "accumulated" ? "acumulado" : "mensal"
-        }${payload.status === "processing" ? ". Processando demonstrativos..." : "."}`
+        payload.alreadyProcessing
+          ? `Ja existe uma importacao do DRE em andamento para ${payload.year}. Vou acompanhar a finalizacao para atualizar a tela.`
+          : `${payload.imported} linha(s) importadas para ${payload.year} em modo ${
+              payload.valuesMode === "accumulated" ? "acumulado" : "mensal"
+            }${payload.status === "processing" ? ". Processando demonstrativos..." : "."}`
       );
-      clearSelectedFile();
+      if (!payload.alreadyProcessing) {
+        clearSelectedFile();
+      }
       setYear(String(payload.year));
       if (payload.status === "processing" && payload.batchId) {
         await waitForBatch(payload.batchId);
         setUploadMessage(
-          `${payload.imported} linha(s) importadas para ${payload.year}. DRE atualizado com sucesso.`
+          payload.alreadyProcessing
+            ? `Importacao do DRE concluida para ${payload.year}. Tela atualizada com sucesso.`
+            : `${payload.imported} linha(s) importadas para ${payload.year}. DRE atualizado com sucesso.`
         );
       }
       await loadSummary();

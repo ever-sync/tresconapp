@@ -34,6 +34,32 @@ function isImportAlreadyProcessingError(err: unknown) {
   );
 }
 
+function triggerLocalDreRebuildInBackground(params: {
+  accountingId: string;
+  clientId: string;
+  year: number;
+  batchId: string;
+}) {
+  setTimeout(() => {
+    void (async () => {
+      try {
+        await rebuildStatements({
+          accountingId: params.accountingId,
+          clientId: params.clientId,
+          year: params.year,
+          statementType: "dre",
+        });
+        await completeImportBatch({ batchId: params.batchId });
+      } catch (err) {
+        await failImportBatch({
+          batchId: params.batchId,
+          errorMessage: err instanceof Error ? err.message : "Falha ao processar DRE",
+        });
+      }
+    })();
+  }, 0);
+}
+
 function detectAccumulatedLikeValues(rows: Array<{ values: number[] }>) {
   const scoredRows = rows
     .map((row) => {
@@ -105,23 +131,6 @@ export async function POST(request: NextRequest) {
       return error("Ano invalido", 400);
     }
 
-    const parseResult = parseMovementFile(await file.arrayBuffer());
-    if (parseResult.fileError) {
-      return error(parseResult.fileError, 400);
-    }
-
-    const parsedRows = parseResult.rows;
-    if (parsedRows.length === 0) {
-      return error(buildInvalidMovementFileMessage(parseResult.layout), 400);
-    }
-
-    const effectiveValuesMode =
-      valuesMode === "auto"
-        ? detectAccumulatedLikeValues(parsedRows)
-          ? "accumulated"
-          : "monthly"
-        : valuesMode;
-
     if (process.env.NODE_ENV !== "production") {
       await prisma.importBatch.updateMany({
         where: {
@@ -141,6 +150,53 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
+    const existingProcessingBatch = await prisma.importBatch.findFirst({
+      where: {
+        accounting_id: auth.accountingId,
+        client_id: auth.clientId,
+        year,
+        kind: "client_dre_upload",
+        status: "processing",
+      },
+      orderBy: {
+        started_at: "desc",
+      },
+      select: {
+        id: true,
+        row_count: true,
+        background_job_id: true,
+      },
+    });
+
+    if (existingProcessingBatch) {
+      return success({
+        imported: existingProcessingBatch.row_count,
+        year,
+        valuesMode,
+        status: "processing",
+        batchId: existingProcessingBatch.id,
+        jobId: existingProcessingBatch.background_job_id,
+        alreadyProcessing: true,
+      });
+    }
+
+    const parseResult = parseMovementFile(await file.arrayBuffer());
+    if (parseResult.fileError) {
+      return error(parseResult.fileError, 400);
+    }
+
+    const parsedRows = parseResult.rows;
+    if (parsedRows.length === 0) {
+      return error(buildInvalidMovementFileMessage(parseResult.layout), 400);
+    }
+
+    const effectiveValuesMode =
+      valuesMode === "auto"
+        ? detectAccumulatedLikeValues(parsedRows)
+          ? "accumulated"
+          : "monthly"
+        : valuesMode;
 
     const importBatch = await openImportBatch({
       accountingId: auth.accountingId,
@@ -349,19 +405,17 @@ export async function POST(request: NextRequest) {
     });
 
     if (process.env.NODE_ENV !== "production") {
-      await rebuildStatements({
+      triggerLocalDreRebuildInBackground({
         accountingId: auth.accountingId,
         clientId: auth.clientId,
         year,
-        statementType: "dre",
+        batchId: importBatch.id,
       });
-      await completeImportBatch({ batchId: importBatch.id });
-
       return success({
         imported: resultsCount,
         year,
         valuesMode: effectiveValuesMode,
-        status: "ready",
+        status: "processing",
         batchId: importBatch.id,
         jobId: null,
       });

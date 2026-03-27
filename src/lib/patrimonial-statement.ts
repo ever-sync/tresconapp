@@ -379,6 +379,23 @@ function hasChildren(code: string, allCodes: string[]): boolean {
   );
 }
 
+function isDescendantCode(code: string, parentCode: string): boolean {
+  const normalized = code.trim();
+  const normalizedParent = parentCode.trim();
+
+  return (
+    normalized !== normalizedParent &&
+    (normalized.startsWith(`${normalizedParent}.`) ||
+      normalized.startsWith(`${normalizedParent}-`) ||
+      normalized.startsWith(`${normalizedParent}/`))
+  );
+}
+
+function getLeafMovements<T extends { code: string }>(rows: T[]): T[] {
+  const codes = rows.map((row) => row.code);
+  return rows.filter((row) => !hasChildren(row.code, codes));
+}
+
 function normalizeCategory(category: string | null | undefined): PatrimonialCategoryKey | null {
   if (!category) return null;
   const normalized = normalizeText(category);
@@ -469,29 +486,71 @@ export function buildPatrimonialStatement(input: {
   activeMonthIndex?: number;
 }): PatrimonialStatementResult {
   const monthLabels = MONTH_LABELS.slice();
-  const allCodes = input.movements.map((movement) => movement.code);
   const chartByCode = buildLookup(input.chartAccounts);
-  const mappingByCode = new Map<string, PatrimonialMappingLike>();
-
-  for (const mapping of input.mappings) {
-    mappingByCode.set(mapping.account_code, mapping);
-  }
-
-  const leafMovements = input.movements.filter(
-    (movement) => !hasChildren(movement.code, allCodes)
-  );
-
   const categorySeries = createSeriesRecord(CATEGORY_KEYS);
 
-  for (const movement of leafMovements) {
-    const chartAccount = chartByCode.get(movement.code) ?? null;
-    const mapping = mappingByCode.get(movement.code) ?? null;
-    const category = resolvePatrimonialCategory({ movement, chartAccount, mapping });
+  function getCategoryRows(category: PatrimonialCategoryKey): PatrimonialMovementLike[] {
+    const configuredCodes = input.mappings
+      .filter((mapping) => normalizeCategory(mapping.category) === category)
+      .map((mapping) => mapping.account_code);
 
-    if (!category) continue;
+    if (configuredCodes.length > 0) {
+      const exactConfiguredRows = input.movements.filter((movement) =>
+        configuredCodes.includes(movement.code)
+      );
+      if (exactConfiguredRows.length > 0) {
+        return getLeafMovements(exactConfiguredRows);
+      }
 
-    for (let index = 0; index < 12; index += 1) {
-      categorySeries[category][index] += movement.values[index] ?? 0;
+      const descendantConfiguredRows = input.movements.filter((movement) =>
+        configuredCodes.some((code) => isDescendantCode(movement.code, code))
+      );
+      return getLeafMovements(descendantConfiguredRows);
+    }
+
+    const matchedByMovementCategory = input.movements.filter(
+      (movement) => normalizeCategory(movement.category) === category
+    );
+    if (matchedByMovementCategory.length > 0) {
+      return getLeafMovements(matchedByMovementCategory);
+    }
+
+    const reportCategoryCodes = input.chartAccounts
+      .filter((account) => normalizeCategory(account.report_category) === category)
+      .map((account) => account.code);
+    if (reportCategoryCodes.length > 0) {
+      const exactReportCategoryRows = input.movements.filter((movement) =>
+        reportCategoryCodes.includes(movement.code)
+      );
+      if (exactReportCategoryRows.length > 0) {
+        return getLeafMovements(exactReportCategoryRows);
+      }
+
+      const descendantReportCategoryRows = input.movements.filter((movement) =>
+        reportCategoryCodes.some((code) => isDescendantCode(movement.code, code))
+      );
+      return getLeafMovements(descendantReportCategoryRows);
+    }
+
+    const matchedByInference = input.movements.filter((movement) => {
+      const chartAccount = chartByCode.get(movement.code) ?? null;
+      return (
+        inferCategory(
+          movement.code,
+          chartAccount?.name ?? movement.name
+        ) === category
+      );
+    });
+
+    return getLeafMovements(matchedByInference);
+  }
+
+  for (const category of CATEGORY_KEYS) {
+    const rows = getCategoryRows(category);
+    for (const movement of rows) {
+      for (let index = 0; index < 12; index += 1) {
+        categorySeries[category][index] += movement.values[index] ?? 0;
+      }
     }
   }
 
