@@ -305,7 +305,7 @@ function DrePageContent() {
 
   async function handleUpload() {
     if (!selectedFile) {
-      window.alert("Selecione uma planilha Excel ou CSV para enviar.");
+      window.alert("Selecione um arquivo CSV ou uma planilha Excel para enviar.");
       return;
     }
 
@@ -498,7 +498,7 @@ function DrePageContent() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".csv,.xlsx,.xls"
               className="hidden"
               onChange={(event) => {
                 const nextFile = event.target.files?.[0] ?? null;
@@ -529,8 +529,8 @@ function DrePageContent() {
               {uploading
                 ? "Enviando..."
                 : selectedFile
-                  ? `Importar Balancete ${year}`
-                  : `Selecionar Balancete ${year}`}
+                  ? `Importar CSV do balancete ${year}`
+                  : `Selecionar CSV do balancete ${year}`}
             </button>
 
             <button

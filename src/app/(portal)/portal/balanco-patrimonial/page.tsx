@@ -326,7 +326,7 @@ function BalancoPatrimonialPageContent() {
 
   async function handleUpload() {
     if (!selectedFile) {
-      window.alert("Selecione uma planilha XLSX para enviar.");
+      window.alert("Selecione um arquivo CSV ou uma planilha Excel para enviar.");
       return;
     }
 
@@ -432,7 +432,7 @@ function BalancoPatrimonialPageContent() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx"
+              accept=".csv,.xlsx,.xls"
               className="hidden"
               onChange={(event) => {
                 const nextFile = event.target.files?.[0] ?? null;
@@ -463,8 +463,8 @@ function BalancoPatrimonialPageContent() {
               {uploading
                 ? "Enviando..."
                 : selectedFile
-                  ? `Importar Saldo ${year}`
-                  : `Selecionar Saldo ${year}`}
+                  ? `Importar CSV patrimonial ${year}`
+                  : `Selecionar CSV patrimonial ${year}`}
             </button>
 
             <button

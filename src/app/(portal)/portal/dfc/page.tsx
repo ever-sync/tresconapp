@@ -409,7 +409,7 @@ function DfcPageContent() {
 
   async function handleUpload() {
     if (!selectedFile) {
-      window.alert("Selecione uma planilha de balancete para enviar.");
+      window.alert("Selecione um arquivo CSV do balancete ou uma planilha Excel para enviar.");
       return;
     }
 
@@ -466,7 +466,7 @@ function DfcPageContent() {
               Arquivo por mes e ano
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Envie um balancete por mes. O saldo atual da planilha alimenta apenas o mes escolhido.
+              Envie um CSV de balancete por mes. O saldo atual da planilha alimenta apenas o mes escolhido.
             </p>
           </div>
 
@@ -478,7 +478,7 @@ function DfcPageContent() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".csv,.xlsx,.xls"
                 className="hidden"
                 onChange={(event) => {
                   const nextFile = event.target.files?.[0] ?? null;
@@ -492,7 +492,7 @@ function DfcPageContent() {
                 className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10"
               >
                 <span className="truncate">
-                  {selectedFile?.name ?? "Selecionar planilha de balancete"}
+                  {selectedFile?.name ?? "Selecionar CSV de balancete"}
                 </span>
                 <FileUp className="h-4 w-4 text-slate-400" />
               </button>
@@ -542,7 +542,7 @@ function DfcPageContent() {
               className="flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
             >
               {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-              {uploading ? "Enviando..." : "Enviar balancete"}
+              {uploading ? "Enviando..." : "Enviar CSV"}
             </button>
           </div>
         </div>
@@ -572,7 +572,7 @@ function DfcPageContent() {
           <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-black/10 px-6 py-6 text-sm text-slate-400">
             {selectedFile
               ? `Arquivo selecionado para ${uploadMonth}/${year}: ${selectedFile.name}`
-              : "Selecione uma planilha Excel ou CSV do balancete mensal e vincule ao mes desejado."}
+              : "Selecione um CSV do balancete mensal ou uma planilha Excel e vincule ao mes desejado."}
           </div>
         </div>
       </section>

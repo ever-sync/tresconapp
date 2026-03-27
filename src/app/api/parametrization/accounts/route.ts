@@ -35,9 +35,7 @@ export async function GET(request: NextRequest) {
             OR: [{ report_type: "dre" }, { report_type: null }],
           }
         : kind === "patrimonial"
-          ? {
-              OR: [{ report_type: "patrimonial" }, { report_type: null }],
-            }
+          ? null
           : null;
 
     const where: Prisma.ChartOfAccountsWhereInput = {

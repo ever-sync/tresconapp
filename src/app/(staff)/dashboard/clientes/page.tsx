@@ -160,7 +160,7 @@ function ClientCardView({
 
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href={`/client-login?cnpj=${encodeURIComponent(formatCnpj(client.cnpj))}`}
+              href={`/api/auth/staff-client-access?clientId=${encodeURIComponent(client.id)}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-cyan-300 transition hover:bg-cyan-500/15"
