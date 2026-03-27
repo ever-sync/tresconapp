@@ -274,7 +274,7 @@ function DrePageContent() {
 
   async function handleUpload() {
     if (!selectedFile) {
-      window.alert("Selecione uma planilha XLSX para enviar.");
+      window.alert("Selecione uma planilha Excel ou CSV para enviar.");
       return;
     }
 
@@ -463,7 +463,7 @@ function DrePageContent() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx"
+              accept=".xlsx,.xls,.csv"
               className="hidden"
               onChange={(event) => {
                 const nextFile = event.target.files?.[0] ?? null;

@@ -259,6 +259,23 @@ function hasChildren(code: string, allCodes: string[]): boolean {
   );
 }
 
+function isDescendantCode(code: string, parentCode: string): boolean {
+  const normalized = code.trim();
+  const normalizedParent = parentCode.trim();
+
+  return (
+    normalized !== normalizedParent &&
+    (normalized.startsWith(`${normalizedParent}.`) ||
+      normalized.startsWith(`${normalizedParent}-`) ||
+      normalized.startsWith(`${normalizedParent}/`))
+  );
+}
+
+function getLeafMovements<T extends { code: string }>(rows: T[]): T[] {
+  const codes = rows.map((row) => row.code);
+  return rows.filter((row) => !hasChildren(row.code, codes));
+}
+
 function normalizeCategory(category: string | null | undefined): DreCategoryKey | null {
   if (!category) return null;
   const normalized = normalizeText(category);
@@ -339,7 +356,6 @@ export function buildDreStatement(input: {
   treatValuesAsAccumulated?: boolean;
 }): DreStatementResult {
   const monthLabels = MONTH_LABELS.slice();
-  const allCodes = input.movements.map((movement) => movement.code);
   const chartByCode = buildCodeLookup(input.chartAccounts);
   const mappingByCode = new Map<string, DreMappingLike>();
 
@@ -347,27 +363,69 @@ export function buildDreStatement(input: {
     mappingByCode.set(mapping.account_code, mapping);
   }
 
-  const leafMovements = input.movements.filter(
-    (movement) => !hasChildren(movement.code, allCodes)
-  );
-
   const categories = createCategoryBuckets();
 
-  for (const movement of leafMovements) {
-    const chartAccount = chartByCode.get(movement.code) ?? null;
-    const mapping = mappingByCode.get(movement.code) ?? null;
-    const category = resolveDreCategory({ movement, chartAccount, mapping });
+  function getCategoryRows(category: DreCategoryKey): DreMovementLike[] {
+    const configuredCodes = input.mappings
+      .filter((mapping) => normalizeCategory(mapping.category) === category)
+      .map((mapping) => mapping.account_code);
 
-    if (!category) {
-      continue;
+    if (configuredCodes.length > 0) {
+      const exactConfiguredRows = input.movements.filter((movement) =>
+        configuredCodes.includes(movement.code)
+      );
+      if (exactConfiguredRows.length > 0) {
+        return getLeafMovements(exactConfiguredRows);
+      }
+
+      const descendantConfiguredRows = input.movements.filter((movement) =>
+        configuredCodes.some((code) => isDescendantCode(movement.code, code))
+      );
+      return getLeafMovements(descendantConfiguredRows);
     }
 
-    const values = input.treatValuesAsAccumulated
-      ? convertAccumulatedToMonthly(movement.values)
-      : movement.values;
+    const matchedByMovementCategory = input.movements.filter(
+      (movement) => normalizeCategory(movement.category) === category
+    );
+    if (matchedByMovementCategory.length > 0) {
+      return getLeafMovements(matchedByMovementCategory);
+    }
 
-    for (let index = 0; index < 12; index += 1) {
-      categories[category][index] += values[index] ?? 0;
+    const reportCategoryCodes = new Set(
+      input.chartAccounts
+        .filter((account) => normalizeCategory(account.report_category) === category)
+        .map((account) => account.code)
+    );
+    if (reportCategoryCodes.size > 0) {
+      return getLeafMovements(
+        input.movements.filter((movement) => reportCategoryCodes.has(movement.code))
+      );
+    }
+
+    const matchedByInference = input.movements.filter((movement) => {
+      if (movement.type !== "dre") return false;
+      const chartAccount = chartByCode.get(movement.code) ?? null;
+      return (
+        inferCategoryFromText(
+          movement.code,
+          chartAccount?.name ?? movement.name
+        ) === category
+      );
+    });
+
+    return getLeafMovements(matchedByInference);
+  }
+
+  for (const category of DRE_CATEGORY_KEYS) {
+    const rows = getCategoryRows(category);
+    for (const movement of rows) {
+      const values = input.treatValuesAsAccumulated
+        ? convertAccumulatedToMonthly(movement.values)
+        : movement.values;
+
+      for (let index = 0; index < 12; index += 1) {
+        categories[category][index] += values[index] ?? 0;
+      }
     }
   }
 

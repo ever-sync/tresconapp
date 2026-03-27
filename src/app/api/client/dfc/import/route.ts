@@ -1,16 +1,14 @@
 import { NextRequest } from "next/server";
-import * as XLSX from "xlsx";
 
 import { error, handleError, success } from "@/lib/api-response";
 import { requireClient } from "@/lib/auth-guard";
-import { createNotification } from "@/lib/notification-service";
 import { enqueueBackgroundJob } from "@/lib/background-jobs";
-import prisma from "@/lib/prisma";
 import {
-  convertAccumulatedToMonthly,
-  resolveDreCategory,
-} from "@/lib/dre-statement";
-import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
+  buildInvalidMovementFileMessage,
+  parseMovementFile,
+} from "@/lib/movement-import";
+import { createNotification } from "@/lib/notification-service";
+import prisma from "@/lib/prisma";
 import {
   completeImportBatch,
   failImportBatch,
@@ -18,150 +16,14 @@ import {
   rebuildStatements,
   updateImportBatchProgress,
 } from "@/lib/statement-snapshots";
+import {
+  convertAccumulatedToMonthly,
+  resolveDreCategory,
+} from "@/lib/dre-statement";
+import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
 
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
-
-type ImportedRow = Record<string, unknown>;
-type MovementType = "dre" | "patrimonial";
-type ParsedMovementRow = {
-  code: string;
-  reduced_code?: string;
-  name: string;
-  level: number;
-  values: number[];
-  type: MovementType;
-  category?: string;
-  is_mapped: boolean;
-};
-
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function getRowValue(row: ImportedRow, aliases: string[]) {
-  const normalizedEntries = Object.entries(row).map(([key, value]) => [
-    normalizeText(key),
-    value,
-  ] as const);
-
-  for (const alias of aliases) {
-    const normalizedAlias = normalizeText(alias);
-    const found = normalizedEntries.find(([key]) => key === normalizedAlias);
-    if (found) {
-      return found[1];
-    }
-  }
-
-  return "";
-}
-
-function parseNumber(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-
-  const normalized = String(value ?? "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .trim();
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function inferMovementType(code: string, rawType: string): MovementType {
-  const normalizedType = normalizeText(rawType);
-  if (
-    normalizedType.includes("dre") ||
-    normalizedType.includes("resultado")
-  ) {
-    return "dre";
-  }
-
-  if (
-    normalizedType.includes("patrimonial") ||
-    normalizedType.includes("balanco")
-  ) {
-    return "patrimonial";
-  }
-
-  const sanitizedCode = code.replace(/[^\d.]/g, "");
-  if (sanitizedCode.startsWith("03") || sanitizedCode.startsWith("04")) {
-    return "dre";
-  }
-
-  return "patrimonial";
-}
-
-function parseRows(rows: ImportedRow[]): ParsedMovementRow[] {
-  const parsedRows: ParsedMovementRow[] = [];
-
-  for (const row of rows) {
-    const code = String(
-      getRowValue(row, ["codigo", "código", "code", "conta"])
-    ).trim();
-    const reducedCode = String(
-      getRowValue(row, [
-        "cod red",
-        "cód red",
-        "codigo reduzido",
-        "código reduzido",
-        "classificacao",
-        "classificação",
-      ])
-    ).trim();
-    const name = String(
-      getRowValue(row, [
-        "nome",
-        "descricao",
-        "descrição",
-        "conta descricao",
-        "conta descrição",
-      ])
-    ).trim();
-    const rawLevel = String(
-      getRowValue(row, ["nivel", "nível", "niv", "level"])
-    ).trim();
-    const rawType = String(
-      getRowValue(row, ["tipo", "type", "relatorio", "relatório"])
-    ).trim();
-    const category = String(getRowValue(row, ["categoria", "grupo"])).trim();
-
-    if (!code || !name) {
-      continue;
-    }
-
-    parsedRows.push({
-      code,
-      reduced_code: reducedCode || undefined,
-      name,
-      level: Number(rawLevel) || Math.max(1, code.split(".").length),
-      values: [
-        parseNumber(getRowValue(row, ["jan", "janeiro"])),
-        parseNumber(getRowValue(row, ["fev", "fevereiro"])),
-        parseNumber(getRowValue(row, ["mar", "marco", "março"])),
-        parseNumber(getRowValue(row, ["abr", "abril"])),
-        parseNumber(getRowValue(row, ["mai", "maio"])),
-        parseNumber(getRowValue(row, ["jun", "junho"])),
-        parseNumber(getRowValue(row, ["jul", "julho"])),
-        parseNumber(getRowValue(row, ["ago", "agosto"])),
-        parseNumber(getRowValue(row, ["set", "setembro"])),
-        parseNumber(getRowValue(row, ["out", "outubro"])),
-        parseNumber(getRowValue(row, ["nov", "novembro"])),
-        parseNumber(getRowValue(row, ["dez", "dezembro"])),
-      ],
-      type: inferMovementType(code, rawType),
-      category: category || undefined,
-      is_mapped: false,
-    });
-  }
-
-  return parsedRows;
-}
 
 export async function POST(request: NextRequest) {
   let importBatchId: string | undefined;
@@ -188,23 +50,14 @@ export async function POST(request: NextRequest) {
       return error("Ano invalido", 400);
     }
 
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
-      return error("Nenhuma planilha encontrada no arquivo", 400);
+    const parseResult = parseMovementFile(await file.arrayBuffer());
+    if (parseResult.fileError) {
+      return error(parseResult.fileError, 400);
     }
 
-    const sheet = workbook.Sheets[sheetName];
-    const imported = XLSX.utils.sheet_to_json<ImportedRow>(sheet, {
-      defval: "",
-    });
-    const parsedRows = parseRows(imported);
-
+    const parsedRows = parseResult.rows;
     if (parsedRows.length === 0) {
-      return error(
-        "Nao foi possivel identificar movimentacoes validas no XLSX",
-        400
-      );
+      return error(buildInvalidMovementFileMessage(parseResult.layout), 400);
     }
 
     const importBatch = await openImportBatch({
@@ -419,8 +272,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     await failImportBatch({
       batchId: importBatchId,
-      errorMessage:
-        err instanceof Error ? err.message : "Falha ao importar DFC",
+      errorMessage: err instanceof Error ? err.message : "Falha ao importar DFC",
     });
     return handleError(err);
   }
