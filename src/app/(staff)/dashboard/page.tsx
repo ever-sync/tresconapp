@@ -145,7 +145,7 @@ function MetricCard({
   } as const;
 
   return (
-    <div className="rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+    <div className="rounded-[1.45rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:rounded-[1.75rem] sm:p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.28em] text-slate-500">
@@ -336,8 +336,8 @@ export default async function DashboardPage() {
     .slice(0, 5);
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6 lg:p-8">
+      <section className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:rounded-[2rem] sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
             <p className="text-xs font-black uppercase tracking-[0.35em] text-cyan-300/75">
@@ -354,17 +354,17 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="grid w-full gap-3 sm:flex sm:w-auto sm:flex-wrap">
             <Link
               href="/dashboard/clientes"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
             >
               Clientes
               <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
               href="/dashboard/parametrizacao"
-              className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.28)]"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.28)]"
             >
               Parametrizacao
               <ArrowRight className="h-4 w-4" />
@@ -373,7 +373,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 md:gap-4 xl:grid-cols-4">
         <MetricCard
           label="Clientes ativos"
           value={formatNumber(clientsActive)}
@@ -405,7 +405,7 @@ export default async function DashboardPage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.25fr_0.95fr]">
-        <div className="rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+        <div className="rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:rounded-[1.75rem] sm:p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
@@ -465,7 +465,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+        <div className="rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:rounded-[1.75rem] sm:p-5">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
               Saude dos demonstrativos
@@ -518,7 +518,7 @@ export default async function DashboardPage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
-        <div className="rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)] xl:col-span-1">
+        <div className="rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:rounded-[1.75rem] sm:p-5 xl:col-span-1">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
@@ -567,7 +567,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)] xl:col-span-1">
+        <div className="rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:rounded-[1.75rem] sm:p-5 xl:col-span-1">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
@@ -617,7 +617,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.28)] xl:col-span-1">
+        <div className="rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:rounded-[1.75rem] sm:p-5 xl:col-span-1">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
@@ -662,8 +662,8 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-4">
+      <section className="grid gap-3 md:grid-cols-3 md:gap-4">
+        <div className="rounded-[1.35rem] border border-white/8 bg-white/[0.03] p-4 sm:rounded-[1.5rem]">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-300" />
             <div>
@@ -690,7 +690,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-4">
+        <div className="rounded-[1.35rem] border border-white/8 bg-white/[0.03] p-4 sm:rounded-[1.5rem]">
           <div className="flex items-center gap-3">
             <LoaderCircle className="h-5 w-5 text-amber-300" />
             <div>
@@ -705,7 +705,7 @@ export default async function DashboardPage() {
           </ul>
         </div>
 
-        <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-4">
+        <div className="rounded-[1.35rem] border border-white/8 bg-white/[0.03] p-4 sm:rounded-[1.5rem]">
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-rose-300" />
             <div>

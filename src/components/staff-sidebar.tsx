@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -208,8 +209,15 @@ export function StaffSidebar() {
       <div className="relative flex min-h-full flex-col px-4 py-5">
         <div className="relative mb-8 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#36c2ff_0%,#1397ff_50%,#1678ff_100%)] text-2xl font-semibold text-white shadow-[0_0_34px_rgba(14,165,233,0.48)]">
-              T
+            <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl shadow-[0_0_34px_rgba(244,200,79,0.22)]">
+              <Image
+                src="/trescontas-mark.png"
+                alt="TresContas"
+                width={56}
+                height={56}
+                className="h-14 w-14"
+                priority
+              />
             </div>
             {!collapsed && (
               <div className="pt-1">

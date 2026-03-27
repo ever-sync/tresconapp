@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (bytes) {
+    if (bytes && document) {
       const rows = parseBalancetePreviewFile(
         bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
       );

@@ -13,7 +13,6 @@ import {
 import {
   AlertTriangle,
   BarChart3,
-  Download,
   FileDown,
   FileUp,
   Landmark,

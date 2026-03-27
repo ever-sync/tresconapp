@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -130,8 +131,15 @@ export function PortalSidebar() {
       <div className="relative flex min-h-full flex-col py-5">
         <div className="flex items-center justify-between gap-3 px-4 pb-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#2dd4ff_0%,#1499ff_48%,#0f6dff_100%)] text-xl font-semibold text-white shadow-[0_0_30px_rgba(14,165,233,0.45)]">
-              T
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl shadow-[0_0_30px_rgba(244,200,79,0.22)]">
+              <Image
+                src="/trescontas-mark.png"
+                alt="TresContas"
+                width={48}
+                height={48}
+                className="h-12 w-12"
+                priority
+              />
             </div>
             {!collapsed && (
               <div>

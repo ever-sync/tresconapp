@@ -17,7 +17,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CalendarDays, Filter, FileDown, UploadCloud } from "lucide-react";
+import { ArrowRight, CalendarDays, Filter, FileDown, UploadCloud } from "lucide-react";
 
 import { useClientAuthStore } from "@/stores/useClientAuthStore";
 import { cn } from "@/lib/utils";
@@ -83,6 +83,13 @@ const bottomMetrics = [
   { label: "Margem EBITDA", value: "0,0%", note: "Sem base", tone: "indigo" },
 ];
 
+const quickActions = [
+  { label: "DRE", href: "/portal/dre", hint: "Resultados" },
+  { label: "DFC", href: "/portal/dfc", hint: "Fluxo" },
+  { label: "Docs", href: "/portal/documentos", hint: "Arquivos" },
+  { label: "Atendimento", href: "/portal/atendimento", hint: "Suporte" },
+];
+
 function money(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -102,15 +109,15 @@ export default function PortalPage() {
   }, []);
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-      <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.88))] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6 lg:p-8">
+      <section className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.88))] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:rounded-[2rem]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
             {tabs.map((tab, index) => (
               <button
                 key={tab}
                 className={cn(
-                  "rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
+                  "min-w-max snap-start rounded-2xl px-4 py-3 text-sm font-semibold transition-all",
                   index === 0
                     ? "bg-cyan-500 text-white shadow-[0_0_24px_rgba(14,165,233,0.32)]"
                     : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
@@ -122,14 +129,14 @@ export default function PortalPage() {
             ))}
           </div>
 
-          <div>
+          <div className="w-full lg:w-auto">
             <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
               Ano
             </p>
             <select
               value={selectedYear}
               onChange={(event) => setSelectedYear(event.target.value)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 lg:min-w-[9rem]"
             >
               {availableYears.map((item) => (
                 <option key={item} value={item} className="bg-slate-900">
@@ -142,13 +149,13 @@ export default function PortalPage() {
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#1ea7ff_0%,#0f86ff_50%,#0a6bff_100%)] text-2xl font-bold text-white shadow-[0_0_28px_rgba(14,165,233,0.45)]">
+        <div className="order-2 rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-5 xl:order-1 xl:rounded-[2rem]">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#1ea7ff_0%,#0f86ff_50%,#0a6bff_100%)] text-xl font-bold text-white shadow-[0_0_28px_rgba(14,165,233,0.45)] sm:h-16 sm:w-16 sm:text-2xl">
                 {client?.name ? client.name.slice(0, 2).toUpperCase() : "CO"}
               </div>
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
                   {client?.name ?? "Cliente não identificado"}
                 </h1>
@@ -163,15 +170,35 @@ export default function PortalPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-start sm:self-auto">
               <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
               <span className="h-2.5 w-2.5 rounded-full bg-cyan-900" />
               <span className="h-2.5 w-2.5 rounded-full bg-cyan-900" />
             </div>
           </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 xl:hidden">
+            {quickActions.map((action) => (
+              <Link
+                key={action.href}
+                href={action.href}
+                className="rounded-[1.35rem] border border-white/8 bg-white/[0.03] px-4 py-3 transition hover:bg-white/[0.06]"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-white">{action.label}</p>
+                    <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-[0.22em] text-slate-500">
+                      {action.hint}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-cyan-300" />
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
 
-        <div className="rounded-[2rem] border border-cyan-400/20 bg-[linear-gradient(180deg,rgba(11,145,239,0.96),rgba(23,93,253,0.95))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
+        <div className="order-1 rounded-[1.8rem] border border-cyan-400/20 bg-[linear-gradient(180deg,rgba(11,145,239,0.96),rgba(23,93,253,0.95))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.24)] sm:p-5 xl:order-2 xl:rounded-[2rem]">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-5xl font-black tracking-tight text-white">27</p>
@@ -188,12 +215,12 @@ export default function PortalPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         {metrics.map((card) => (
           <div
             key={card.label}
             className={cn(
-              "rounded-[1.6rem] border border-white/8 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]",
+              "rounded-[1.45rem] border border-white/8 p-4 shadow-[0_18px_50px_rgba(0,0,0,0.22)] sm:rounded-[1.6rem] sm:p-5",
               "bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))]",
               "relative overflow-hidden"
             )}
@@ -210,13 +237,13 @@ export default function PortalPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[1.05fr_1.2fr_0.75fr]">
-        <div className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.26)]">
+        <div className="order-2 rounded-[1.65rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)] sm:p-5 lg:order-1 lg:rounded-[1.8rem]">
           <p className="text-lg font-bold text-white">Composição - Jan</p>
           <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.2em] text-slate-500">
             Distribuição do faturamento
           </p>
 
-          <div className="mt-6 h-[330px]">
+          <div className="mt-6 h-[260px] sm:h-[330px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -256,13 +283,13 @@ export default function PortalPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.26)]">
+        <div className="order-3 rounded-[1.65rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)] sm:p-5 lg:order-2 lg:rounded-[1.8rem]">
           <p className="text-lg font-bold text-white">Receita vs Despesa</p>
           <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.2em] text-slate-500">
             Evolução mensal
           </p>
 
-          <div className="mt-6 h-[330px]">
+          <div className="mt-6 h-[260px] sm:h-[330px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
@@ -297,7 +324,7 @@ export default function PortalPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.26)]">
+        <div className="order-1 rounded-[1.65rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)] sm:p-5 lg:order-3 lg:rounded-[1.8rem]">
           <div className="flex items-center justify-between gap-3">
             <p className="text-lg font-bold text-white">Relatórios</p>
             <button
@@ -348,11 +375,11 @@ export default function PortalPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         {bottomMetrics.map((card) => (
           <div
             key={card.label}
-            className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]"
+            className="rounded-[1.45rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.22)] sm:rounded-[1.6rem] sm:p-5"
           >
             <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-slate-400">
               {card.label}
@@ -376,13 +403,13 @@ export default function PortalPage() {
       </section>
 
       <section className="grid gap-4">
-        <div className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.26)]">
+        <div className="rounded-[1.65rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.8rem] sm:p-5">
           <p className="text-lg font-bold text-white">Evolução das Margens</p>
           <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.2em] text-slate-500">
             Margem bruta, líquida e EBITDA ao longo do ano (%)
           </p>
 
-          <div className="mt-6 h-[320px]">
+          <div className="mt-6 h-[260px] sm:h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
@@ -406,13 +433,13 @@ export default function PortalPage() {
           </div>
         </div>
 
-        <div className="rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.26)]">
+        <div className="rounded-[1.65rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)] sm:rounded-[1.8rem] sm:p-5">
           <p className="text-lg font-bold text-white">Para onde vai o dinheiro</p>
           <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.2em] text-slate-500">
             Distribuição da receita bruta por mês
           </p>
 
-          <div className="mt-6 h-[360px]">
+          <div className="mt-6 h-[280px] sm:h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
@@ -435,12 +462,12 @@ export default function PortalPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
           {healthCards.map((card) => (
             <div
               key={card.label}
               className={cn(
-                "rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]",
+                "rounded-[1.45rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))] p-4 shadow-[0_18px_50px_rgba(0,0,0,0.22)] sm:rounded-[1.6rem] sm:p-5",
                 card.tone === "emerald" && "ring-1 ring-emerald-500/15",
                 card.tone === "amber" && "ring-1 ring-amber-500/15",
                 card.tone === "rose" && "ring-1 ring-rose-500/15"
@@ -467,7 +494,7 @@ export default function PortalPage() {
         </div>
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] px-5 py-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)]">
+      <div className="flex flex-col gap-4 rounded-[1.65rem] border border-white/8 bg-[linear-gradient(180deg,rgba(11,22,38,0.97),rgba(10,18,32,0.92))] px-4 py-4 shadow-[0_18px_60px_rgba(0,0,0,0.26)] sm:flex-row sm:items-center sm:justify-between sm:rounded-[1.8rem] sm:px-5">
         <div>
           <p className="text-sm text-slate-400">Sessão atual</p>
           <p className="mt-1 text-lg font-semibold text-white">

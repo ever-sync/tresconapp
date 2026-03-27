@@ -1,13 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#19b6ff" />
-      <stop offset="100%" stop-color="#0b63ff" />
+    <linearGradient id="bg" x1="72" y1="48" x2="430" y2="466" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F4C84F" />
+      <stop offset="1" stop-color="#D6A01A" />
+    </linearGradient>
+    <linearGradient id="disc" x1="120" y1="90" x2="390" y2="414" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE38C" />
+      <stop offset="0.42" stop-color="#F4C84F" />
+      <stop offset="1" stop-color="#CF9708" />
+    </linearGradient>
+    <linearGradient id="bladeLeft" x1="85" y1="120" x2="216" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF1B7" />
+      <stop offset="1" stop-color="#F2C54A" />
+    </linearGradient>
+    <linearGradient id="bladeCenter" x1="196" y1="94" x2="336" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F9D55F" />
+      <stop offset="0.55" stop-color="#EAB62D" />
+      <stop offset="1" stop-color="#C98E05" />
+    </linearGradient>
+    <linearGradient id="bladeRight" x1="296" y1="208" x2="454" y2="388" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D9A21F" />
+      <stop offset="1" stop-color="#B87C00" />
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="18" fill="#07111f" />
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <circle cx="255" cy="248" r="184" fill="url(#disc)" />
+
   <path
-    d="M14 18h36v7H33v7h13v7H33v18h-8V39H14v-7h11v-7H14z"
-    fill="url(#bg)"
+    d="M82 171C121 116 180 82 240 70C196 121 162 188 133 272C118 316 104 372 80 438C37 390 22 322 34 257C40 223 54 194 82 171Z"
+    fill="url(#bladeLeft)"
+  />
+
+  <path
+    d="M242 67C334 81 408 132 452 206L330 261L350 278L322 379C302 433 262 468 210 482C202 425 210 355 225 292C245 206 272 132 242 67Z"
+    fill="url(#bladeCenter)"
+  />
+
+  <path
+    d="M512 270V343C512 416 475 475 418 512H299C311 447 334 390 364 341L432 344L425 315L512 270Z"
+    fill="url(#bladeRight)"
+    opacity="0.9"
   />
 </svg>
