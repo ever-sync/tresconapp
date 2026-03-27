@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
+  CheckCircle2,
   BriefcaseBusiness,
   Building,
   Building2,
+  Circle,
   Edit3,
+  Eye,
+  EyeOff,
   FileText,
   Globe2,
   LayoutGrid,
+  LoaderCircle,
   Mail,
   MapPin,
   Phone,
@@ -53,6 +58,11 @@ type ModalForm = {
   representativeName: string;
   accessEmail: string;
   password: string;
+};
+
+type PasswordRequirement = {
+  label: string;
+  met: boolean;
 };
 
 const blankForm: ModalForm = {
@@ -230,6 +240,10 @@ export default function ClientesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [form, setForm] = useState<ModalForm>(blankForm);
+  const [showPassword, setShowPassword] = useState(false);
+  const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
+  const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
+  const [lastLookupCnpj, setLastLookupCnpj] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -282,21 +296,102 @@ export default function ClientesPage() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  const passwordRequirements = useMemo<PasswordRequirement[]>(
+    () => [
+      { label: "Minimo de 8 caracteres", met: form.password.length >= 8 },
+      { label: "Pelo menos 1 letra maiuscula", met: /[A-Z]/.test(form.password) },
+      { label: "Pelo menos 1 letra minuscula", met: /[a-z]/.test(form.password) },
+      { label: "Pelo menos 1 numero", met: /[0-9]/.test(form.password) },
+    ],
+    [form.password]
+  );
+
+  const passwordStrengthReady = passwordRequirements.every((item) => item.met);
+
+  const lookupCnpj = useCallback(async (rawValue: string) => {
+    const digits = rawValue.replace(/\D/g, "");
+
+    if (digits.length !== 14 || digits === lastLookupCnpj || cnpjLookupLoading) {
+      return;
+    }
+
+    setCnpjLookupLoading(true);
+    setCnpjLookupMessage(null);
+
+    try {
+      const response = await fetch(`/api/cnpj/${digits}`, { cache: "no-store" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        companyName?: string;
+        industry?: string;
+        email?: string;
+        phone?: string;
+        address?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Nao foi possivel consultar o CNPJ");
+      }
+
+      setForm((current) => ({
+        ...current,
+        companyName: current.companyName || payload.companyName || "",
+        industry: current.industry || payload.industry || "",
+        email: current.email || payload.email || "",
+        phone: current.phone || formatPhone(payload.phone || ""),
+        address: current.address || payload.address || "",
+      }));
+      setLastLookupCnpj(digits);
+      setCnpjLookupMessage(
+        payload.companyName
+          ? `Dados preenchidos automaticamente para ${payload.companyName}.`
+          : "Dados do CNPJ carregados automaticamente."
+      );
+    } catch (err) {
+      setCnpjLookupMessage(
+        err instanceof Error ? err.message : "Nao foi possivel consultar o CNPJ agora."
+      );
+    } finally {
+      setCnpjLookupLoading(false);
+    }
+  }, [cnpjLookupLoading, lastLookupCnpj]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const digits = form.cnpj.replace(/\D/g, "");
+    if (digits.length === 14) {
+      void lookupCnpj(form.cnpj);
+    }
+  }, [form.cnpj, lookupCnpj, modalOpen]);
+
   function closeModal() {
     setModalOpen(false);
     setEditingClientId(null);
     setForm(blankForm);
+    setShowPassword(false);
+    setCnpjLookupLoading(false);
+    setCnpjLookupMessage(null);
+    setLastLookupCnpj("");
   }
 
   function openCreateModal() {
     setEditingClientId(null);
     setForm(blankForm);
+    setShowPassword(false);
+    setCnpjLookupLoading(false);
+    setCnpjLookupMessage(null);
+    setLastLookupCnpj("");
     setModalOpen(true);
   }
 
   function openEditModal(client: ClientRecord) {
     setEditingClientId(client.id);
     setForm(formFromClient(client));
+    setShowPassword(false);
+    setCnpjLookupLoading(false);
+    setCnpjLookupMessage(null);
+    setLastLookupCnpj(client.cnpj.replace(/\D/g, ""));
     setModalOpen(true);
   }
 
@@ -512,14 +607,47 @@ export default function ClientesPage() {
                     />
                   </Field>
 
-                  <Field label="CNPJ" icon={BriefcaseBusiness}>
-                    <input
-                      value={form.cnpj}
-                      onChange={(event) => updateForm("cnpj", formatCnpj(event.target.value))}
-                      placeholder="00.000.000/0001-00"
-                      className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
-                    />
-                  </Field>
+	                  <Field label="CNPJ" icon={BriefcaseBusiness}>
+	                    <div className="space-y-2">
+	                      <input
+	                        value={form.cnpj}
+	                        onChange={(event) => {
+	                          const nextValue = formatCnpj(event.target.value);
+	                          updateForm("cnpj", nextValue);
+	                          setCnpjLookupMessage(null);
+	                          if (nextValue.replace(/\D/g, "").length < 14) {
+	                            setLastLookupCnpj("");
+	                          }
+	                        }}
+	                        onBlur={(event) => void lookupCnpj(event.target.value)}
+	                        placeholder="00.000.000/0001-00"
+	                        className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
+	                      />
+	                      <div className="flex min-h-5 items-center gap-2 text-[0.68rem]">
+	                        {cnpjLookupLoading ? (
+	                          <>
+	                            <LoaderCircle className="h-3.5 w-3.5 animate-spin text-cyan-300" />
+	                            <span className="text-cyan-300">Consultando CNPJ...</span>
+	                          </>
+	                        ) : cnpjLookupMessage ? (
+	                          <span
+	                            className={cn(
+	                              "font-semibold",
+	                              cnpjLookupMessage.startsWith("Dados")
+	                                ? "text-emerald-300"
+	                                : "text-amber-300"
+	                            )}
+	                          >
+	                            {cnpjLookupMessage}
+	                          </span>
+	                        ) : (
+	                          <span className="text-slate-500">
+	                            Ao informar o CNPJ completo, os dados da empresa serao preenchidos automaticamente.
+	                          </span>
+	                        )}
+	                      </div>
+	                    </div>
+	                  </Field>
 
                   <Field label="Setor/Ramo" icon={Globe2}>
                     <input
@@ -623,13 +751,63 @@ export default function ClientesPage() {
                     icon={ShieldCheck}
                     full
                   >
-                    <input
-                      type="password"
-                      value={form.password}
-                      onChange={(event) => updateForm("password", event.target.value)}
-                      placeholder={editingClientId ? "Preencha apenas se quiser trocar" : "••••••••"}
-                      className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
-                    />
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          value={form.password}
+                          onChange={(event) => updateForm("password", event.target.value)}
+                          placeholder={
+                            editingClientId
+                              ? "Preencha apenas se quiser trocar"
+                              : "Digite uma senha forte"
+                          }
+                          className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((current) => !current)}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                          aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+
+                      {(!editingClientId || form.password.length > 0) && (
+                        <div className="rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                              Forca da senha
+                            </p>
+                            <span
+                              className={cn(
+                                "rounded-full px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.18em]",
+                                passwordStrengthReady
+                                  ? "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                  : "border border-amber-400/20 bg-amber-500/10 text-amber-300"
+                              )}
+                            >
+                              {passwordStrengthReady ? "Senha forte" : "Ajustar senha"}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {passwordRequirements.map((item) => (
+                              <div key={item.label} className="flex items-center gap-2 text-sm">
+                                {item.met ? (
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                                ) : (
+                                  <Circle className="h-4 w-4 text-slate-500" />
+                                )}
+                                <span className={item.met ? "text-emerald-100" : "text-slate-400"}>
+                                  {item.label}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </Field>
                 </div>
               </section>

@@ -81,6 +81,33 @@ test("parseMovementFile preserves legacy month aliases and forceType", () => {
   assert.equal(result.rows[0]?.values[1], 250);
 });
 
+test("parseMovementFile accepts english month-year headers from comparative workbooks", () => {
+  const buffer = toWorkbookBuffer([
+    {
+      Classificacao: "03.01",
+      "Nome da conta contabil": "Receita Bruta",
+      "Jan-25": "100,00",
+      "Feb-25": "250,00",
+      "Apr-25": "75,50",
+      "May-25": "90,00",
+      "Aug-25": "33,00",
+      "Oct-25": "10,00",
+      "Dec-25": "999,00",
+    },
+  ]);
+
+  const result = parseMovementFile(buffer);
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0]?.values[0], 100);
+  assert.equal(result.rows[0]?.values[1], 250);
+  assert.equal(result.rows[0]?.values[3], 75.5);
+  assert.equal(result.rows[0]?.values[4], 90);
+  assert.equal(result.rows[0]?.values[7], 33);
+  assert.equal(result.rows[0]?.values[9], 10);
+  assert.equal(result.rows[0]?.values[11], 999);
+});
+
 test("parseMonthlyBalanceteFile reads saldo atual into the selected month", () => {
   const csv = [
     "CONTA;CLASSIFICACAO;NOME DA CONTA CONTABIL;SALDO ANTERIOR;DEBITO;CREDITO;SALDO ATUAL",
