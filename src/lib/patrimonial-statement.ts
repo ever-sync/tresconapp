@@ -356,6 +356,39 @@ function createSeriesRecord<T extends string>(keys: readonly T[]): Record<T, num
   }, {} as Record<T, number[]>);
 }
 
+function buildSectionSeries(
+  categorySeries: Record<PatrimonialCategoryKey, number[]>
+): Record<PatrimonialSectionKey, number[]> {
+  const sectionSeries = createSeriesRecord(SECTION_KEYS);
+  for (const [category, values] of Object.entries(categorySeries) as Array<
+    [PatrimonialCategoryKey, number[]]
+  >) {
+    const section = CATEGORY_TO_SECTION[category];
+    for (let index = 0; index < 12; index += 1) {
+      sectionSeries[section][index] += values[index] ?? 0;
+    }
+  }
+
+  return sectionSeries;
+}
+
+function buildTotals(sectionSeries: Record<PatrimonialSectionKey, number[]>) {
+  return {
+    ativoCirculante: sectionSeries.ativo_circulante,
+    ativoNaoCirculante: sectionSeries.ativo_nao_circulante,
+    passivoCirculante: sectionSeries.passivo_circulante,
+    passivoNaoCirculante: sectionSeries.passivo_nao_circulante,
+    patrimonioLiquido: sectionSeries.patrimonio_liquido,
+    totalAtivo: sectionSeries.ativo_circulante.map(
+      (value, index) => value + sectionSeries.ativo_nao_circulante[index]
+    ),
+    totalPassivo: sectionSeries.passivo_circulante.map(
+      (value, index) =>
+        value + sectionSeries.passivo_nao_circulante[index] + sectionSeries.patrimonio_liquido[index]
+    ),
+  };
+}
+
 function seriesTotal(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
@@ -716,30 +749,54 @@ export function buildPatrimonialStatement(input: {
     }
   }
 
-  const sectionSeries = createSeriesRecord(SECTION_KEYS);
-  for (const [category, values] of Object.entries(categorySeries) as Array<
-    [PatrimonialCategoryKey, number[]]
-  >) {
-    const section = CATEGORY_TO_SECTION[category];
-    for (let index = 0; index < 12; index += 1) {
-      sectionSeries[section][index] += values[index] ?? 0;
-    }
+  for (let index = 0; index < 12; index += 1) {
+    const totalAtivo =
+      (categorySeries.disponivel[index] ?? 0) +
+      (categorySeries.clientes[index] ?? 0) +
+      (categorySeries.adiantamentos[index] ?? 0) +
+      (categorySeries.estoques[index] ?? 0) +
+      (categorySeries.tributos_a_compensar_cp[index] ?? 0) +
+      (categorySeries.outras_contas_a_receber[index] ?? 0) +
+      (categorySeries.despesas_antecipadas[index] ?? 0) +
+      (categorySeries.contas_a_receber_lp[index] ?? 0) +
+      (categorySeries.processos_judiciais[index] ?? 0) +
+      (categorySeries.partes_relacionadas_a_receber[index] ?? 0) +
+      (categorySeries.outras_contas_a_receber_lp[index] ?? 0) +
+      (categorySeries.tributos_a_recuperar_lp[index] ?? 0) +
+      (categorySeries.investimentos[index] ?? 0) +
+      (categorySeries.imobilizado[index] ?? 0) +
+      (categorySeries.intangivel[index] ?? 0);
+
+    const totalPassivosSemPL =
+      (categorySeries.fornecedores[index] ?? 0) +
+      (categorySeries.emprestimos_financiamentos_cp[index] ?? 0) +
+      (categorySeries.obrigacoes_trabalhistas[index] ?? 0) +
+      (categorySeries.obrigacoes_tributarias[index] ?? 0) +
+      (categorySeries.contas_a_pagar_cp[index] ?? 0) +
+      (categorySeries.parcelamentos_cp[index] ?? 0) +
+      (categorySeries.processos_a_pagar_cp[index] ?? 0) +
+      (categorySeries.emprestimos_financiamentos_lp[index] ?? 0) +
+      (categorySeries.conta_corrente_dos_socios[index] ?? 0) +
+      (categorySeries.emprestimos_partes_relacionadas[index] ?? 0) +
+      (categorySeries.parcelamentos_lp[index] ?? 0) +
+      (categorySeries.processos_a_pagar_lp[index] ?? 0) +
+      (categorySeries.impostos_diferidos[index] ?? 0) +
+      (categorySeries.outras_contas_a_pagar_lp[index] ?? 0) +
+      (categorySeries.receita_exercicio_futuro_lp[index] ?? 0) +
+      (categorySeries.provisao_contingencias[index] ?? 0);
+
+    const patrimonioLiquidoSemResultado =
+      (categorySeries.capital_social[index] ?? 0) +
+      (categorySeries.reserva_capital[index] ?? 0) +
+      (categorySeries.reserva_lucros[index] ?? 0) +
+      (categorySeries.distribuicao_lucros[index] ?? 0);
+
+    categorySeries.resultado_exercicio[index] =
+      totalAtivo - totalPassivosSemPL - patrimonioLiquidoSemResultado;
   }
 
-  const totals = {
-    ativoCirculante: sectionSeries.ativo_circulante,
-    ativoNaoCirculante: sectionSeries.ativo_nao_circulante,
-    passivoCirculante: sectionSeries.passivo_circulante,
-    passivoNaoCirculante: sectionSeries.passivo_nao_circulante,
-    patrimonioLiquido: sectionSeries.patrimonio_liquido,
-    totalAtivo: sectionSeries.ativo_circulante.map(
-      (value, index) => value + sectionSeries.ativo_nao_circulante[index]
-    ),
-    totalPassivo: sectionSeries.passivo_circulante.map(
-      (value, index) =>
-        value + sectionSeries.passivo_nao_circulante[index] + sectionSeries.patrimonio_liquido[index]
-    ),
-  };
+  const sectionSeries = buildSectionSeries(categorySeries);
+  const totals = buildTotals(sectionSeries);
 
   const activeMonthIndex =
     typeof input.activeMonthIndex === "number" && input.activeMonthIndex >= 0

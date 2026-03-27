@@ -60,6 +60,13 @@ test("buildPatrimonialStatement uses DRE mappings for resultado do exercicio whe
     year: 2025,
     movements: [
       {
+        code: "01.1.01.0001",
+        name: "Disponivel",
+        level: 4,
+        values: [65, 135, 200, 270],
+        type: "patrimonial",
+      },
+      {
         code: "02.4.04.05",
         name: "Resultado do Exercicio",
         level: 4,
