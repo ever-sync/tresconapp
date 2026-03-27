@@ -106,6 +106,7 @@ const DRE_GROUPS: Array<[string, string[]]> = [
       "Despesas Administrativas",
       "Despesas Comerciais",
       "Despesas Tributarias",
+      "Outras Despesas",
       "Despesas Financeiras",
     ],
   ],

@@ -50,3 +50,24 @@ test("buildDreStatement prioritizes exact configured rows over descendants", () 
 
   assert.equal(statement.lines.receitaBruta[0], 50);
 });
+
+test("buildDreStatement includes Outras Despesas in DRE calculations", () => {
+  const statement = buildDreStatement({
+    year: 2025,
+    movements: [
+      {
+        code: "09.01",
+        name: "Despesa eventual",
+        level: 2,
+        values: [30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        type: "dre",
+      },
+    ],
+    chartAccounts: [],
+    mappings: [{ account_code: "09.01", category: "Outras Despesas" }],
+    activeMonthIndex: 0,
+  });
+
+  assert.equal(statement.lines.outrasDespesas[0], -30);
+  assert.equal(statement.lines.lair[0], -30);
+});

@@ -6,6 +6,7 @@ export type DreCategoryKey =
   | "despesas_administrativas"
   | "despesas_comerciais"
   | "despesas_tributarias"
+  | "outras_despesas"
   | "resultado_participacoes_societarias"
   | "outras_receitas"
   | "receitas_financeiras"
@@ -23,6 +24,7 @@ export type DreLineKey =
   | "despesasAdministrativas"
   | "despesasComerciais"
   | "despesasTributarias"
+  | "outrasDespesas"
   | "resultadoParticipacoesSocietarias"
   | "outrasReceitas"
   | "receitasFinanceiras"
@@ -114,6 +116,7 @@ const DRE_CATEGORY_KEYS: DreCategoryKey[] = [
   "despesas_administrativas",
   "despesas_comerciais",
   "despesas_tributarias",
+  "outras_despesas",
   "resultado_participacoes_societarias",
   "outras_receitas",
   "receitas_financeiras",
@@ -140,6 +143,7 @@ const DRE_LINE_CONFIG: Array<{
     level: 1,
     accent: "pink",
   },
+  { key: "outrasDespesas", label: "Outras Despesas", level: 1, accent: "pink" },
   { key: "despesasComerciais", label: "Despesas Comerciais", level: 1, accent: "pink" },
   { key: "despesasTributarias", label: "Despesas Tributárias", level: 1, accent: "pink" },
   {
@@ -194,6 +198,7 @@ const CATEGORY_ALIASES: Record<string, DreCategoryKey> = {
   "despesas administrativas": "despesas_administrativas",
   "despesas comerciais": "despesas_comerciais",
   "despesas tributarias": "despesas_tributarias",
+  "outras despesas": "outras_despesas",
   "resultado de participacoes societarias": "resultado_participacoes_societarias",
   "participacoes societarias": "resultado_participacoes_societarias",
   "outras receitas": "outras_receitas",
@@ -293,6 +298,7 @@ function inferCategoryFromText(code: string, name: string): DreCategoryKey | nul
     [/despesa.*administr/i, "despesas_administrativas"],
     [/despesa.*comerc/i, "despesas_comerciais"],
     [/despesa.*tribut/i, "despesas_tributarias"],
+    [/outras?.*despesas?|despesas?.*outras?/i, "outras_despesas"],
     [/participac|equivalencia/i, "resultado_participacoes_societarias"],
     [/outras? receitas?/i, "outras_receitas"],
     [/receita.*financeir/i, "receitas_financeiras"],
@@ -440,6 +446,7 @@ export function buildDreStatement(input: {
   const despesasAdministrativas = negativeSeries(categories.despesas_administrativas);
   const despesasComerciais = negativeSeries(categories.despesas_comerciais);
   const despesasTributarias = negativeSeries(categories.despesas_tributarias);
+  const outrasDespesas = negativeSeries(categories.outras_despesas);
   const resultadoParticipacoesSocietarias = positiveSeries(
     categories.resultado_participacoes_societarias
   );
@@ -452,6 +459,7 @@ export function buildDreStatement(input: {
       despesasAdministrativas[index] +
       despesasComerciais[index] +
       despesasTributarias[index] +
+      outrasDespesas[index] +
       resultadoParticipacoesSocietarias[index] +
       outrasReceitas[index] +
       receitasFinanceiras[index] +
@@ -477,6 +485,7 @@ export function buildDreStatement(input: {
     despesasAdministrativas,
     despesasComerciais,
     despesasTributarias,
+    outrasDespesas,
     resultadoParticipacoesSocietarias,
     outrasReceitas,
     receitasFinanceiras,
@@ -502,6 +511,7 @@ export function buildDreStatement(input: {
         despesasAdministrativas[activeMonthIndex] +
         despesasComerciais[activeMonthIndex] +
         despesasTributarias[activeMonthIndex] +
+        outrasDespesas[activeMonthIndex] +
         despesasFinanceiras[activeMonthIndex]
     ),
     resultadoLiquido: lucroLiquido[activeMonthIndex] ?? 0,
@@ -515,6 +525,7 @@ export function buildDreStatement(input: {
       (despesasAdministrativas[activeMonthIndex] ?? 0) +
         (despesasComerciais[activeMonthIndex] ?? 0) +
         (despesasTributarias[activeMonthIndex] ?? 0) +
+        (outrasDespesas[activeMonthIndex] ?? 0) +
         (despesasFinanceiras[activeMonthIndex] ?? 0)
     ),
     lucro: Math.max(lucroLiquido[activeMonthIndex] ?? 0, 0),
