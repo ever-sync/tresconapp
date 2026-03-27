@@ -14,15 +14,24 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: data.email },
-      include: { accounting: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password_hash: true,
+        role: true,
+        accounting_id: true,
+        accounting: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
 
     if (!user) {
       return error("Credenciais inválidas", 401);
-    }
-
-    if (user.status !== "active") {
-      return error("Conta desativada", 403);
     }
 
     const valid = await bcrypt.compare(data.password, user.password_hash);

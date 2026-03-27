@@ -14,19 +14,24 @@ export async function POST(request: NextRequest) {
 
     const client = await prisma.client.findUnique({
       where: { cnpj: data.cnpj },
-      include: { accounting: true },
+      select: {
+        id: true,
+        name: true,
+        cnpj: true,
+        email: true,
+        password_hash: true,
+        accounting_id: true,
+        accounting: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
 
     if (!client || !client.password_hash) {
       return error("Credenciais inválidas", 401);
-    }
-
-    if (client.status !== "active") {
-      return error("Conta desativada", 403);
-    }
-
-    if (client.deleted_at) {
-      return error("Conta removida", 403);
     }
 
     const valid = await bcrypt.compare(data.password, client.password_hash);
