@@ -4,6 +4,10 @@ import prisma from "@/lib/prisma";
 import { requireClient } from "@/lib/auth-guard";
 import { success, handleError } from "@/lib/api-response";
 import { getDfcSnapshotEnvelope } from "@/lib/statement-snapshots";
+import {
+  DFC_BALANCETE_IMPORT_KIND_PREFIX,
+  parseDfcBalanceteImportMonth,
+} from "@/lib/dfc-balancete";
 
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
@@ -25,6 +29,8 @@ function parseMonth(value: string | null): number | null {
   }
   return parsed - 1;
 }
+
+const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -67,8 +73,79 @@ export async function GET(request: NextRequest) {
       requestedMonth: requestedMonth ?? undefined,
     });
 
+    const [balanceteImports, balanceteDocuments] = await Promise.all([
+      prisma.importBatch.findMany({
+        where: {
+          client_id: client.id,
+          year,
+          kind: {
+            startsWith: DFC_BALANCETE_IMPORT_KIND_PREFIX,
+          },
+        },
+        select: {
+          kind: true,
+          file_name: true,
+          status: true,
+          row_count: true,
+          error_message: true,
+          started_at: true,
+          finished_at: true,
+        },
+        orderBy: [{ started_at: "desc" }],
+      }),
+      prisma.clientDocument.findMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: client.id,
+          document_type: "dfc_balancete_import",
+          period_year: year,
+          deleted_at: null,
+        },
+        select: {
+          id: true,
+          period_month: true,
+        },
+      }),
+    ]);
+
+    const latestImportByMonth = new Map<number, (typeof balanceteImports)[number]>();
+    for (const item of balanceteImports) {
+      const monthIndex = parseDfcBalanceteImportMonth(item.kind);
+      if (monthIndex === null || latestImportByMonth.has(monthIndex)) {
+        continue;
+      }
+      latestImportByMonth.set(monthIndex, item);
+    }
+
+    const previewDocumentIdByMonth = new Map<number, string>();
+    for (const document of balanceteDocuments) {
+      if (!document.period_month || previewDocumentIdByMonth.has(document.period_month - 1)) {
+        continue;
+      }
+      previewDocumentIdByMonth.set(document.period_month - 1, document.id);
+    }
+
     return success({
       ...envelope.payload,
+      balanceteUploads: MONTH_LABELS.map((label, monthIndex) => {
+        const upload = latestImportByMonth.get(monthIndex);
+        const previewDocumentId = previewDocumentIdByMonth.get(monthIndex) ?? null;
+        const canPreview =
+          upload?.status === "ready" && (previewDocumentId !== null || (upload?.row_count ?? 0) > 0);
+
+        return {
+          month: monthIndex + 1,
+          label,
+          status: upload?.status ?? "empty",
+          fileName: upload?.file_name ?? null,
+          rowCount: upload?.row_count ?? 0,
+          errorMessage: upload?.error_message ?? null,
+          startedAt: upload?.started_at.toISOString() ?? null,
+          finishedAt: upload?.finished_at?.toISOString() ?? null,
+          previewDocumentId,
+          canPreview,
+        };
+      }),
       stale: envelope.stale,
       snapshotStatus: envelope.snapshotStatus,
       mappingVersion: envelope.mappingVersion,

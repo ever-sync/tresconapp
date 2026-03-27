@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 
 import {
   buildInvalidMovementFileMessage,
+  parseMonthlyBalanceteFile,
   parseMovementFile,
   parseMovementNumber,
 } from "./movement-import";
@@ -78,6 +79,23 @@ test("parseMovementFile preserves legacy month aliases and forceType", () => {
   assert.equal(result.rows[0]?.type, "patrimonial");
   assert.equal(result.rows[0]?.values[0], 100);
   assert.equal(result.rows[0]?.values[1], 250);
+});
+
+test("parseMonthlyBalanceteFile reads saldo atual into the selected month", () => {
+  const csv = [
+    "CONTA;CLASSIFICACAO;NOME DA CONTA CONTABIL;SALDO ANTERIOR;DEBITO;CREDITO;SALDO ATUAL",
+    "10013;01.1.01.02.0005;BANCO ITAU;2.555.617,97D;50.365.325,18;51.689.103,44;1.231.839,71D",
+  ].join("\n");
+
+  const result = parseMonthlyBalanceteFile(new TextEncoder().encode(csv).buffer, 2);
+
+  assert.equal(result.fileError, undefined);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0]?.code, "01.1.01.02.0005");
+  assert.equal(result.rows[0]?.reduced_code, "10013");
+  assert.equal(result.rows[0]?.type, "patrimonial");
+  assert.equal(result.rows[0]?.values[2], 1231839.71);
+  assert.equal(result.rows[0]?.values[1], 0);
 });
 
 test("buildInvalidMovementFileMessage explains the expected layout", () => {

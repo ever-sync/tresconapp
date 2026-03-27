@@ -19,14 +19,16 @@ import {
   Landmark,
   List,
   LoaderCircle,
+  Trash2,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 import { uploadFormDataWithProgress } from "@/lib/upload-request";
 import { cn } from "@/lib/utils";
 
-type ViewMode = "lista" | "graficos" | "fechado";
+type ViewMode = "calculo" | "balancete" | "graficos" | "fechado";
 
 type DfcRow = {
   key: string;
@@ -46,6 +48,18 @@ type DfcResponse = {
   status: "ready" | "partial";
   warnings: string[];
   rows: DfcRow[];
+  balanceteUploads: Array<{
+    month: number;
+    label: string;
+    status: "processing" | "ready" | "failed" | "empty";
+    fileName: string | null;
+    rowCount: number;
+    errorMessage: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+    previewDocumentId: string | null;
+    canPreview: boolean;
+  }>;
   closedRows: Array<{ label: string; value: number }>;
   cards: Array<{ label: string; value: number }>;
   stale: boolean;
@@ -57,6 +71,7 @@ type DfcResponse = {
 type ImportResponse = {
   imported: number;
   year: number;
+  month?: number;
   valuesMode: string;
   status?: "processing" | "ready";
   batchId?: string | null;
@@ -68,8 +83,24 @@ type ImportBatchStatus = {
   errorMessage?: string | null;
 };
 
+type BalancetePreviewResponse = {
+  fileName: string;
+  displayName: string;
+  source: "file" | "fallback";
+  rows: Array<{
+    conta: string;
+    classificacao: string;
+    nomeContaContabil: string;
+    saldoAnterior: string;
+    debito: string;
+    credito: string;
+    saldoAtual: string;
+  }>;
+};
+
 const tabs: Array<{ id: ViewMode; label: string; icon: typeof List }> = [
-  { id: "lista", label: "Lista", icon: List },
+  { id: "calculo", label: "Calculo", icon: List },
+  { id: "balancete", label: "Lista de balancete", icon: Landmark },
   { id: "graficos", label: "Graficos", icon: BarChart3 },
   { id: "fechado", label: "Fechado", icon: FileDown },
 ];
@@ -86,6 +117,7 @@ const CARD_TONES = [
 ];
 const EMPTY_ROWS: DfcRow[] = [];
 const EMPTY_CARDS: Array<{ label: string; value: number }> = [];
+const EMPTY_BALANCETE_UPLOADS: DfcResponse["balanceteUploads"] = [];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -162,8 +194,9 @@ function ChartCard({
 function DfcPageContent() {
   const searchParams = useSearchParams();
   const initialYearFromQuery = searchParams.get("year");
-  const [view, setView] = useState<ViewMode>("lista");
+  const [view, setView] = useState<ViewMode>("calculo");
   const [month, setMonth] = useState("Jan");
+  const [uploadMonth, setUploadMonth] = useState("Jan");
   const [year, setYear] = useState(
     initialYearFromQuery && /^\d{4}$/.test(initialYearFromQuery)
       ? initialYearFromQuery
@@ -173,10 +206,14 @@ function DfcPageContent() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [valuesMode, setValuesMode] = useState<"monthly" | "accumulated">("monthly");
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [data, setData] = useState<DfcResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewMonthLabel, setPreviewMonthLabel] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<BalancetePreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [deletingMonth, setDeletingMonth] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const availableYears = useMemo(() => {
@@ -243,6 +280,7 @@ function DfcPageContent() {
 
   const monthLabels = data?.monthLabels ?? MONTHS;
   const listRows = data?.rows ?? EMPTY_ROWS;
+  const balanceteUploads = data?.balanceteUploads ?? EMPTY_BALANCETE_UPLOADS;
   const cards = data?.cards ?? EMPTY_CARDS;
   const closedRows = data?.closedRows ?? EMPTY_CARDS;
 
@@ -273,9 +311,73 @@ function DfcPageContent() {
     ].filter(Boolean) as Array<{ label: string; value: number }>;
   }, [cards]);
 
+  async function handleOpenQuickPreview(item: DfcResponse["balanceteUploads"][number]) {
+    setPreviewMonthLabel(item.label);
+    setPreviewData(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+
+    try {
+      const response = await fetch(`/api/dfc/balancete-preview?year=${year}&month=${item.month}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || "Nao foi possivel carregar o balancete.");
+      }
+
+      const payload = (await response.json()) as BalancetePreviewResponse;
+      setPreviewData(payload);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "Nao foi possivel carregar o balancete.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function handleCloseQuickPreview() {
+    setPreviewMonthLabel(null);
+    setPreviewData(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
+  }
+
+  async function handleDeleteBalancete(item: DfcResponse["balanceteUploads"][number]) {
+    const confirmed = window.confirm(
+      `Excluir o balancete de ${item.label}/${year}? Isso remove a importacao deste mes e recalcula o DFC.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingMonth(item.month);
+    setUploadMessage(null);
+
+    try {
+      const response = await fetch(`/api/client/dfc/import?year=${year}&month=${item.month}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || "Nao foi possivel excluir o balancete.");
+      }
+
+      handleCloseQuickPreview();
+      setUploadMessage(`Balancete de ${item.label}/${year} excluido com sucesso.`);
+      await loadSummary();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Nao foi possivel excluir o balancete.");
+    } finally {
+      setDeletingMonth(null);
+    }
+  }
+
   async function handleUpload() {
     if (!selectedFile) {
-      window.alert("Selecione uma planilha XLSX para enviar.");
+      window.alert("Selecione uma planilha de balancete para enviar.");
       return;
     }
 
@@ -287,7 +389,7 @@ function DfcPageContent() {
       const formData = new FormData();
       formData.set("file", selectedFile);
       formData.set("year", year);
-      formData.set("valuesMode", valuesMode);
+      formData.set("month", String(MONTHS.indexOf(uploadMonth) + 1));
 
       const payload = await uploadFormDataWithProgress<ImportResponse>(
         "/api/client/dfc/import",
@@ -296,7 +398,7 @@ function DfcPageContent() {
       );
 
       setUploadMessage(
-        `${payload.imported} linha(s) importadas para ${payload.year} em modo ${payload.valuesMode === "accumulated" ? "acumulado" : "mensal"}.`
+        `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}.`
       );
       setSelectedFile(null);
       if (fileInputRef.current) {
@@ -304,11 +406,11 @@ function DfcPageContent() {
       }
       if (payload.status === "processing" && payload.batchId) {
         setUploadMessage(
-          `${payload.imported} linha(s) importadas para ${payload.year}. Processando DFC...`
+          `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}. Processando DFC...`
         );
         await waitForBatch(payload.batchId);
         setUploadMessage(
-          `${payload.imported} linha(s) importadas para ${payload.year}. DFC atualizado com sucesso.`
+          `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}. DFC atualizado com sucesso.`
         );
       }
       await loadSummary();
@@ -332,11 +434,11 @@ function DfcPageContent() {
               Arquivo por mes e ano
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Cada envio vira um card. O historico nao sobrescreve o mes anterior.
+              Envie um balancete por mes. O saldo atual da planilha alimenta apenas o mes escolhido.
             </p>
           </div>
 
-          <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[300px_150px_150px_120px_auto]">
+          <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[300px_150px_120px_auto]">
             <div>
               <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
                 Planilha
@@ -344,7 +446,7 @@ function DfcPageContent() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx"
+                accept=".xlsx,.xls,.csv"
                 className="hidden"
                 onChange={(event) => {
                   const nextFile = event.target.files?.[0] ?? null;
@@ -358,7 +460,7 @@ function DfcPageContent() {
                 className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10"
               >
                 <span className="truncate">
-                  {selectedFile?.name ?? "Selecionar planilha XLSX"}
+                  {selectedFile?.name ?? "Selecionar planilha de balancete"}
                 </span>
                 <FileUp className="h-4 w-4 text-slate-400" />
               </button>
@@ -369,8 +471,8 @@ function DfcPageContent() {
                 Mes
               </p>
               <select
-                value={month}
-                onChange={(event) => setMonth(event.target.value)}
+                value={uploadMonth}
+                onChange={(event) => setUploadMonth(event.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
               >
                 {MONTHS.map((item) => (
@@ -378,24 +480,6 @@ function DfcPageContent() {
                     {item}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Modo
-              </p>
-              <select
-                value={valuesMode}
-                onChange={(event) => setValuesMode(event.target.value === "accumulated" ? "accumulated" : "monthly")}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
-              >
-                <option value="monthly" className="bg-slate-900">
-                  Mensal
-                </option>
-                <option value="accumulated" className="bg-slate-900">
-                  Acumulado
-                </option>
               </select>
             </div>
 
@@ -426,7 +510,7 @@ function DfcPageContent() {
               className="flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
             >
               {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-              {uploading ? "Enviando..." : "Enviar"}
+              {uploading ? "Enviando..." : "Enviar balancete"}
             </button>
           </div>
         </div>
@@ -455,8 +539,8 @@ function DfcPageContent() {
 
           <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-black/10 px-6 py-6 text-sm text-slate-400">
             {selectedFile
-              ? `Arquivo selecionado: ${selectedFile.name}`
-              : "Selecione uma planilha XLSX e envie para atualizar o DFC deste cliente."}
+              ? `Arquivo selecionado para ${uploadMonth}/${year}: ${selectedFile.name}`
+              : "Selecione uma planilha Excel ou CSV do balancete mensal e vincule ao mes desejado."}
           </div>
         </div>
       </section>
@@ -499,21 +583,6 @@ function DfcPageContent() {
             })}
           </div>
 
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
-          >
-            <UploadCloud className="h-4 w-4" />
-            Importar DFC {year}
-          </button>
-
-          <button
-            type="button"
-            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
-          >
-            <Download className="h-4 w-4" />
-          </button>
         </div>
 
         {loading && (
@@ -544,7 +613,7 @@ function DfcPageContent() {
         ) : null}
       </section>
 
-      {view === "lista" && (
+      {view === "calculo" && (
         <section className="overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
           <div className="overflow-x-auto">
             <div className="min-w-[1600px]">
@@ -602,6 +671,114 @@ function DfcPageContent() {
                 ))}
               </div>
             </div>
+          </div>
+        </section>
+      )}
+
+      {view === "balancete" && (
+        <section className="overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+          <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
+            {balanceteUploads.map((item) => (
+              <div
+                key={`balancete-upload-${item.month}`}
+                className={cn(
+                  "rounded-[1.6rem] border p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]",
+                  item.status === "ready"
+                    ? "border-emerald-400/20 bg-[linear-gradient(180deg,rgba(8,34,28,0.96),rgba(9,24,22,0.92))]"
+                    : item.status === "processing"
+                      ? "border-cyan-400/20 bg-[linear-gradient(180deg,rgba(11,28,49,0.96),rgba(12,22,40,0.9))]"
+                      : item.status === "failed"
+                        ? "border-rose-400/20 bg-[linear-gradient(180deg,rgba(45,18,27,0.96),rgba(32,16,22,0.92))]"
+                        : "border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))]"
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">
+                      Mes
+                    </p>
+                    <h3 className="mt-2 text-2xl font-black text-white">{item.label}</h3>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-[0.22em]",
+                      item.status === "ready"
+                        ? "border border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
+                        : item.status === "processing"
+                          ? "border border-cyan-400/20 bg-cyan-500/10 text-cyan-200"
+                          : item.status === "failed"
+                            ? "border border-rose-400/20 bg-rose-500/10 text-rose-200"
+                            : "border border-white/8 bg-white/4 text-slate-400"
+                    )}
+                  >
+                    {item.status === "ready"
+                      ? "Importado"
+                      : item.status === "processing"
+                        ? "Processando"
+                        : item.status === "failed"
+                          ? "Falhou"
+                          : "Pendente"}
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <div className="rounded-2xl border border-white/8 bg-black/10 px-4 py-3 text-slate-300">
+                    {item.fileName ?? "Nenhum arquivo enviado para este mes."}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
+                      <div className="text-[0.65rem] font-black uppercase tracking-[0.22em] text-slate-500">
+                        Linhas
+                      </div>
+                      <div className="mt-2 text-lg font-black text-white">{item.rowCount}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
+                      <div className="text-[0.65rem] font-black uppercase tracking-[0.22em] text-slate-500">
+                        Atualizado
+                      </div>
+                      <div className="mt-2 text-sm font-bold text-white">
+                        {item.finishedAt || item.startedAt
+                          ? new Date(item.finishedAt ?? item.startedAt ?? "").toLocaleString("pt-BR")
+                          : "-"}
+                      </div>
+                    </div>
+                  </div>
+                  {item.errorMessage ? (
+                    <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                      {item.errorMessage}
+                    </div>
+                  ) : null}
+                  {item.status === "ready" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {item.canPreview ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenQuickPreview(item)}
+                          className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm font-bold text-cyan-200 transition hover:bg-cyan-500/15"
+                        >
+                          Visualizacao rapida
+                        </button>
+                      ) : (
+                        <div />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteBalancete(item)}
+                        disabled={deletingMonth === item.month}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-200 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deletingMonth === item.month ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                        Excluir
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       )}
@@ -713,6 +890,99 @@ function DfcPageContent() {
           </div>
         ))}
       </section>
+
+      {previewMonthLabel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 px-2 py-4 backdrop-blur-sm lg:px-4">
+          <button
+            type="button"
+            aria-label="Fechar visualizacao"
+            className="absolute inset-0 cursor-default"
+            onClick={handleCloseQuickPreview}
+          />
+
+          <div className="relative z-10 flex h-[94vh] w-[min(96vw,1500px)] flex-col overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.99),rgba(10,18,32,0.98))] shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+            <div className="flex items-start justify-between gap-4 border-b border-white/8 px-6 py-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-300/70">
+                  Visualização Rápida
+                </p>
+                <h3 className="mt-2 text-2xl font-black text-white">
+                  Balancete {previewMonthLabel}/{year}
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  {previewData?.displayName ?? previewData?.fileName ?? "Planilha importada do mes selecionado."}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCloseQuickPreview}
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto p-5">
+              {previewLoading ? (
+                <div className="flex items-center justify-center gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-12 text-sm text-slate-300">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Carregando planilha...
+                </div>
+              ) : previewError ? (
+                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-4 text-sm text-rose-100">
+                  {previewError}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {previewData?.source === "fallback" ? (
+                    <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
+                      O arquivo original deste mes nao foi encontrado. Esta visualizacao mostra apenas os saldos salvos no balancete.
+                      Para ver <span className="font-bold">saldo anterior</span>, <span className="font-bold">debito</span> e <span className="font-bold">credito</span>, reimporte a planilha deste mes.
+                    </div>
+                  ) : null}
+                  <div className="overflow-x-auto pb-2">
+                    <div className="min-w-[1320px]">
+                    <div className="grid grid-cols-[110px_150px_minmax(300px,1.4fr)_minmax(150px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(170px,1fr)] border-b border-white/8 bg-white/4 px-4 py-4 text-[0.7rem] font-black uppercase tracking-[0.22em] text-slate-400">
+                      <div>CONTA</div>
+                      <div>CLASSIFICAÇÃO</div>
+                      <div>NOME DA CONTA CONTÁBIL</div>
+                      <div>SALDO ANTERIOR</div>
+                      <div>DÉBITO</div>
+                      <div>CRÉDITO</div>
+                      <div>SALDO ATUAL</div>
+                    </div>
+
+                    <div className="divide-y divide-white/6">
+                      {previewData?.rows.map((row, index) => (
+                        <div
+                          key={`${row.classificacao}-${row.conta}-${index}`}
+                          className="grid grid-cols-[110px_150px_minmax(300px,1.4fr)_minmax(150px,1fr)_minmax(140px,1fr)_minmax(140px,1fr)_minmax(170px,1fr)] items-center px-4 py-3 text-sm"
+                        >
+                          <div className="font-bold text-slate-200">{row.conta || "-"}</div>
+                          <div className="text-slate-300">{row.classificacao || "-"}</div>
+                          <div className="pr-4 text-slate-100">{row.nomeContaContabil || "-"}</div>
+                          <div className="text-right text-slate-300">{row.saldoAnterior || "-"}</div>
+                          <div className="text-right text-slate-300">{row.debito || "-"}</div>
+                          <div className="text-right text-slate-300">{row.credito || "-"}</div>
+                          <div className="text-right font-semibold text-cyan-200">{row.saldoAtual || "-"}</div>
+                        </div>
+                      ))}
+
+                      {!previewData?.rows.length && (
+                        <div className="px-4 py-10 text-center text-sm text-slate-500">
+                          Nenhuma linha encontrada no arquivo salvo deste mes.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

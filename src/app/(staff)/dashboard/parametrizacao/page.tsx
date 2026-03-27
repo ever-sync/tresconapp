@@ -9,8 +9,10 @@ import { cn } from "@/lib/utils";
 import {
   DFC_DERIVED_LINES,
   DFC_UI_GROUPS,
+  getCanonicalDfcLineKey,
   getDfcLabelFromLineKey,
   getDfcLineKeyVariants,
+  getDfcTargetCanonicalLineKeys,
 } from "@/lib/dfc-lines";
 
 type DemoKey = "dre" | "patrimonial" | "dfc";
@@ -228,6 +230,28 @@ function firstTargetOf(groups: Array<[string, string[]]>) {
   return groups[0]?.[1]?.[0] ?? "";
 }
 
+function buildDfcCountsByTarget(
+  groups: Array<[string, string[]]>,
+  counts: Array<{ line_key: string; _count: { _all: number } }>
+) {
+  const rawCountsByLine = counts.reduce((acc, group) => {
+    const canonical = getCanonicalDfcLineKey(group.line_key);
+    acc.set(canonical, (acc.get(canonical) ?? 0) + group._count._all);
+    return acc;
+  }, new Map<string, number>());
+
+  return groups
+    .flatMap(([, items]) => items)
+    .reduce((acc, item) => {
+      const total = getDfcTargetCanonicalLineKeys(item).reduce(
+        (sum, key) => sum + (rawCountsByLine.get(key) ?? 0),
+        0
+      );
+      acc.set(normalizeText(item), total);
+      return acc;
+    }, new Map<string, number>());
+}
+
 export default async function ParametrizacaoPage({ searchParams }: ParametrizacaoPageProps) {
   const auth = await requireStaff();
   const resolvedSearchParams = (await searchParams) ?? {};
@@ -408,11 +432,7 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
         }),
       ]);
 
-      mappedCountsByTarget = dfcCounts.reduce((acc, group) => {
-        const key = normalizeText(getDfcLabelFromLineKey(group.line_key));
-        acc.set(key, (acc.get(key) ?? 0) + group._count._all);
-        return acc;
-      }, new Map<string, number>());
+      mappedCountsByTarget = buildDfcCountsByTarget(DFC_UI_GROUPS, dfcCounts);
       dfcLineMappings = initialMappings;
 
       const mappedIds = uniqueStrings(initialMappings.map((mapping) => mapping.chart_account_id));
@@ -488,11 +508,21 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
         return acc;
       }, new Map<string, number>());
     } else if (selectedTab === "dfc") {
-      mappedCountsByTarget = (snapshot.dfcLineMappings ?? []).reduce((acc, mapping) => {
-        const key = normalizeText(getDfcLabelFromLineKey(mapping.line_key));
-        acc.set(key, (acc.get(key) ?? 0) + 1);
-        return acc;
-      }, new Map<string, number>());
+      mappedCountsByTarget = buildDfcCountsByTarget(
+        DFC_UI_GROUPS,
+        (snapshot.dfcLineMappings ?? []).reduce<Array<{ line_key: string; _count: { _all: number } }>>(
+          (acc, mapping) => {
+            const current = acc.find((item) => item.line_key === mapping.line_key);
+            if (current) {
+              current._count._all += 1;
+            } else {
+              acc.push({ line_key: mapping.line_key, _count: { _all: 1 } });
+            }
+            return acc;
+          },
+          []
+        )
+      );
     }
     loadError =
       "Nao foi possivel carregar o banco agora. A tela esta usando a copia local da parametrizacao da Coca-Cola.";

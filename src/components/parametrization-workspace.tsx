@@ -8,6 +8,7 @@ import {
   ParametrizationRemoveButton,
   ParametrizationRemoveManyButton,
 } from "@/components/parametrization-actions";
+import { DFC_VISIBLE_DERIVED_TARGETS, isDfcDerivedTarget } from "@/lib/dfc-lines";
 import { cn } from "@/lib/utils";
 
 type DemoKey = "dre" | "patrimonial" | "dfc";
@@ -18,10 +19,17 @@ type AccountSnapshot = {
   name: string;
 };
 
+type AccountGroup = {
+  title: string;
+  total: number;
+  accounts: AccountSnapshot[];
+};
+
 type CategoryCard = {
   key: string;
   title: string;
   mappedAccounts: AccountSnapshot[];
+  mappedGroups?: AccountGroup[];
   mappedCount: number;
   description: string;
 };
@@ -153,7 +161,8 @@ function replaceCardAccountsInSection(
   section: DemoSection,
   target: string,
   mappedAccounts: AccountSnapshot[],
-  mappedCount = mappedAccounts.length
+  mappedCount = mappedAccounts.length,
+  mappedGroups?: AccountGroup[]
 ) {
   return {
     ...section,
@@ -165,6 +174,27 @@ function replaceCardAccountsInSection(
               ...card,
               mappedCount,
               mappedAccounts,
+              mappedGroups,
+            }
+          : card
+      ),
+    })),
+  };
+}
+
+function clearCardAccountsInSection(section: DemoSection, targets: string[]) {
+  const targetSet = new Set(targets);
+
+  return {
+    ...section,
+    groups: section.groups.map((group) => ({
+      ...group,
+      cards: group.cards.map((card) =>
+        targetSet.has(card.title)
+          ? {
+              ...card,
+              mappedAccounts: [],
+              mappedGroups: undefined,
             }
           : card
       ),
@@ -294,6 +324,7 @@ export function ParametrizationWorkspace({
 
         const payload = (await response.json()) as {
           accounts?: AccountSnapshot[];
+          groups?: AccountGroup[];
           total?: number;
         };
 
@@ -306,7 +337,8 @@ export function ParametrizationWorkspace({
             current,
             selectedTarget,
             payload.accounts ?? [],
-            payload.total ?? payload.accounts?.length ?? 0
+            payload.total ?? payload.accounts?.length ?? 0,
+            payload.groups
           )
         );
         setResolvedTargets((current) => new Set([...current, selectedTarget]));
@@ -344,6 +376,8 @@ export function ParametrizationWorkspace({
 
     setResolvedTargets((current) => new Set([...current, target]));
     setSection((current) => {
+      const nextResolvedTargets =
+        current.key === "dfc" ? DFC_VISIBLE_DERIVED_TARGETS.filter((item) => item !== target) : [];
       const targetAlreadyHadAccount = current.groups.some((group) =>
         group.cards.some(
           (card) =>
@@ -351,9 +385,13 @@ export function ParametrizationWorkspace({
         )
       );
       const withoutCode = removeCodesFromSection(current, new Set([snapshot.code]));
+      const invalidatedSection =
+        nextResolvedTargets.length > 0
+          ? clearCardAccountsInSection(withoutCode, nextResolvedTargets)
+          : withoutCode;
 
       return {
-        ...withoutCode,
+        ...invalidatedSection,
         unmappedTotalCount:
           current.key === "dre"
             ? 0
@@ -362,7 +400,7 @@ export function ParametrizationWorkspace({
                 current.unmappedTotalCount -
                   (current.unmappedAccounts.some((item) => item.code === snapshot.code) ? 1 : 0)
               ),
-        groups: withoutCode.groups.map((group) => ({
+        groups: invalidatedSection.groups.map((group) => ({
           ...group,
           cards: group.cards.map((card) => {
             if (card.title !== target) return card;
@@ -378,6 +416,16 @@ export function ParametrizationWorkspace({
         })),
       };
     });
+    if (section.key === "dfc") {
+      setResolvedTargets((current) => {
+        const next = new Set(current);
+        DFC_VISIBLE_DERIVED_TARGETS.forEach((item) => {
+          if (item !== target) next.delete(item);
+        });
+        next.add(target);
+        return next;
+      });
+    }
   }
 
   function handleAccountsSavedMany(
@@ -403,18 +451,24 @@ export function ParametrizationWorkspace({
 
     const codeSet = new Set(snapshots.map((account) => account.code));
 
-    setResolvedTargets((current) => new Set([...current, target]));
     setSection((current) => {
       const withoutCodes = removeCodesFromSection(current, codeSet);
+      const invalidatedSection =
+        current.key === "dfc"
+          ? clearCardAccountsInSection(
+              withoutCodes,
+              DFC_VISIBLE_DERIVED_TARGETS.filter((item) => item !== target)
+            )
+          : withoutCodes;
       const movedFromUnmapped = current.unmappedAccounts.filter((account) => codeSet.has(account.code)).length;
 
       return {
-        ...withoutCodes,
+        ...invalidatedSection,
         unmappedTotalCount:
           current.key === "dre"
             ? 0
             : Math.max(0, current.unmappedTotalCount - movedFromUnmapped),
-        groups: withoutCodes.groups.map((group) => ({
+        groups: invalidatedSection.groups.map((group) => ({
           ...group,
           cards: group.cards.map((card) => {
             if (card.title !== target) return card;
@@ -428,23 +482,44 @@ export function ParametrizationWorkspace({
         })),
       };
     });
+    setResolvedTargets((current) => {
+      const next = new Set(current);
+      if (section.key === "dfc") {
+        DFC_VISIBLE_DERIVED_TARGETS.forEach((item) => {
+          if (item !== target) next.delete(item);
+        });
+      }
+      next.add(target);
+      return next;
+    });
   }
 
   function handleAccountRemoved(accountCode: string) {
     setSection((current) => {
       const removed = snapshotByCode(current, accountCode);
       const withoutCode = removeCodesFromSection(current, new Set([accountCode]));
+      const invalidatedSection =
+        current.key === "dfc"
+          ? clearCardAccountsInSection(withoutCode, DFC_VISIBLE_DERIVED_TARGETS)
+          : withoutCode;
 
       if (!removed) {
-        return withoutCode;
+        return invalidatedSection;
       }
 
       return {
-        ...withoutCode,
+        ...invalidatedSection,
         unmappedTotalCount: current.key === "dre" ? 0 : current.unmappedTotalCount + 1,
-        unmappedAccounts: appendUniqueAccounts(withoutCode.unmappedAccounts, [removed]),
+        unmappedAccounts: appendUniqueAccounts(invalidatedSection.unmappedAccounts, [removed]),
       };
     });
+    if (section.key === "dfc") {
+      setResolvedTargets((current) => {
+        const next = new Set(current);
+        DFC_VISIBLE_DERIVED_TARGETS.forEach((item) => next.delete(item));
+        return next;
+      });
+    }
   }
 
   function handleAccountsRemovedMany(accountCodes: string[]) {
@@ -455,14 +530,25 @@ export function ParametrizationWorkspace({
         .map((code) => snapshotByCode(current, code))
         .filter((item): item is AccountSnapshot => Boolean(item));
       const withoutCodes = removeCodesFromSection(current, codeSet);
+      const invalidatedSection =
+        current.key === "dfc"
+          ? clearCardAccountsInSection(withoutCodes, DFC_VISIBLE_DERIVED_TARGETS)
+          : withoutCodes;
 
       return {
-        ...withoutCodes,
+        ...invalidatedSection,
         unmappedTotalCount:
           current.key === "dre" ? 0 : current.unmappedTotalCount + removedSnapshots.length,
-        unmappedAccounts: appendUniqueAccounts(withoutCodes.unmappedAccounts, removedSnapshots),
+        unmappedAccounts: appendUniqueAccounts(invalidatedSection.unmappedAccounts, removedSnapshots),
       };
     });
+    if (section.key === "dfc") {
+      setResolvedTargets((current) => {
+        const next = new Set(current);
+        DFC_VISIBLE_DERIVED_TARGETS.forEach((item) => next.delete(item));
+        return next;
+      });
+    }
   }
 
   return (
@@ -620,6 +706,9 @@ export function ParametrizationWorkspace({
                 {group.cards.map((card) => {
                   const isLoadingCard =
                     loadingTarget === card.title && card.mappedCount > 0 && card.mappedAccounts.length === 0;
+                  const isReadOnlyCard = section.key === "dfc" && isDfcDerivedTarget(card.title);
+                  const groupedAccounts =
+                    isReadOnlyCard && card.mappedGroups && card.mappedGroups.length > 0;
 
                   return (
                     <article
@@ -635,23 +724,32 @@ export function ParametrizationWorkspace({
                         </div>
 
                         <div className="flex flex-wrap items-center justify-end gap-2">
+                          {isReadOnlyCard ? (
+                            <span className="inline-flex items-center justify-center rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.24em] text-amber-200">
+                              Consolidado
+                            </span>
+                          ) : null}
                           <span className="inline-flex min-w-[3.25rem] items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-black uppercase tracking-[0.24em] text-cyan-300">
                             {card.mappedCount}
                           </span>
-                          <ParametrizationAddButton
-                            kind={section.key}
-                            target={card.title}
-                            disabled={isOffline}
-                            onSaved={(account) => handleAccountSaved(card.title, account)}
-                            onSavedMany={(accounts) => handleAccountsSavedMany(card.title, accounts)}
-                          />
-                          <ParametrizationRemoveManyButton
-                            kind={section.key}
-                            target={card.title}
-                            accountCodes={card.mappedAccounts.map((account) => account.code)}
-                            disabled={isOffline || card.mappedAccounts.length === 0}
-                            onRemovedMany={(codes) => handleAccountsRemovedMany(codes)}
-                          />
+                          {!isReadOnlyCard ? (
+                            <>
+                              <ParametrizationAddButton
+                                kind={section.key}
+                                target={card.title}
+                                disabled={isOffline}
+                                onSaved={(account) => handleAccountSaved(card.title, account)}
+                                onSavedMany={(accounts) => handleAccountsSavedMany(card.title, accounts)}
+                              />
+                              <ParametrizationRemoveManyButton
+                                kind={section.key}
+                                target={card.title}
+                                accountCodes={card.mappedAccounts.map((account) => account.code)}
+                                disabled={isOffline || card.mappedAccounts.length === 0}
+                                onRemovedMany={(codes) => handleAccountsRemovedMany(codes)}
+                              />
+                            </>
+                          ) : null}
                         </div>
                       </div>
 
@@ -664,7 +762,37 @@ export function ParametrizationWorkspace({
                             </div>
                           ) : card.mappedAccounts.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-slate-500">
-                              Nenhuma conta configurada nessa categoria.
+                              {isReadOnlyCard
+                                ? "Nenhuma conta consolidada a partir das linhas vinculadas."
+                                : "Nenhuma conta configurada nessa categoria."}
+                            </div>
+                          ) : groupedAccounts ? (
+                            <div className="space-y-4">
+                              {card.mappedGroups?.map((group) => (
+                                <div
+                                  key={`${card.key}-${group.title}`}
+                                  className="rounded-[1.1rem] border border-white/8 bg-[#0b1525] px-4 py-4"
+                                >
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-cyan-300">
+                                      {group.title}
+                                    </div>
+                                    <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-cyan-200">
+                                      {group.total} conta(s)
+                                    </span>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {group.accounts.map((account) => (
+                                      <div
+                                        key={`${group.title}-${account.code}-${account.name}`}
+                                        className="rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3 text-sm text-slate-100"
+                                      >
+                                        {formatListLabel(account)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             card.mappedAccounts.map((account) => (
@@ -679,12 +807,14 @@ export function ParametrizationWorkspace({
                                   <div className="flex-1 rounded-2xl border border-white/8 bg-[#0f1a2b] px-4 py-3 text-sm text-slate-100">
                                     {formatListLabel(account)}
                                   </div>
-                                  <ParametrizationRemoveButton
-                                    kind={section.key}
-                                    target={card.title}
-                                    accountCode={account.code}
-                                    onRemoved={(code) => handleAccountRemoved(code)}
-                                  />
+                                  {!isReadOnlyCard ? (
+                                    <ParametrizationRemoveButton
+                                      kind={section.key}
+                                      target={card.title}
+                                      accountCode={account.code}
+                                      onRemoved={(code) => handleAccountRemoved(code)}
+                                    />
+                                  ) : null}
                                 </div>
                               </div>
                             ))

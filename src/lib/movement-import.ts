@@ -23,6 +23,7 @@ type LayoutSummary = {
   codeColumn: string | null;
   nameColumn: string | null;
   monthColumns: string[];
+  balanceColumn?: string | null;
 };
 
 export type ParseMovementFileResult = {
@@ -32,7 +33,17 @@ export type ParseMovementFileResult = {
   fileError?: string;
 };
 
-const CODE_ALIASES = ["codigo", "code", "conta", "classificacao"];
+export type BalancetePreviewRow = {
+  conta: string;
+  classificacao: string;
+  nomeContaContabil: string;
+  saldoAnterior: string;
+  debito: string;
+  credito: string;
+  saldoAtual: string;
+};
+
+const CODE_ALIASES = ["classificacao", "codigo", "code", "conta"];
 const REDUCED_CODE_ALIASES = [
   "cod red",
   "codigo reduzido",
@@ -47,6 +58,10 @@ const NAME_ALIASES = [
 const LEVEL_ALIASES = ["nivel", "niv", "level"];
 const TYPE_ALIASES = ["tipo", "type", "relatorio"];
 const CATEGORY_ALIASES = ["categoria", "grupo"];
+const BALANCE_ALIASES = ["saldo atual", "saldo final", "saldo"];
+const PREVIOUS_BALANCE_ALIASES = ["saldo anterior"];
+const DEBIT_ALIASES = ["debito"];
+const CREDIT_ALIASES = ["credito"];
 
 const MONTH_NAME_ALIASES: Record<string, number> = {
   jan: 0,
@@ -112,6 +127,31 @@ function getRowValue(row: ImportedRow, aliases: string[]) {
   }
 
   return "";
+}
+
+function readWorkbook(fileData: ArrayBuffer) {
+  try {
+    return XLSX.read(fileData, { type: "array" });
+  } catch {
+    return null;
+  }
+}
+
+function resolveAccountIdentifiers(row: ImportedRow) {
+  const classification = String(getRowValue(row, ["classificacao"])).trim();
+  const genericCode = String(getRowValue(row, ["codigo", "code", "conta"])).trim();
+  const reducedCandidate = String(getRowValue(row, REDUCED_CODE_ALIASES)).trim();
+  const code = classification || genericCode;
+  const reducedCode =
+    (reducedCandidate && reducedCandidate !== code ? reducedCandidate : "") ||
+    (genericCode && genericCode !== code ? genericCode : "") ||
+    code ||
+    undefined;
+
+  return {
+    code,
+    reducedCode,
+  };
 }
 
 export function parseMovementNumber(value: unknown) {
@@ -229,6 +269,7 @@ function summarizeLayout(headers: string[]): LayoutSummary {
     codeColumn: findMatchingHeader(headers, CODE_ALIASES),
     nameColumn: findMatchingHeader(headers, NAME_ALIASES),
     monthColumns: headers.filter((header) => findMonthIndex(header) !== null),
+    balanceColumn: findMatchingHeader(headers, BALANCE_ALIASES),
   };
 }
 
@@ -240,7 +281,7 @@ function collectHeaders(rows: ImportedRow[]) {
 
 export function buildInvalidMovementFileMessage(layout: LayoutSummary) {
   const expectedColumns =
-    "Classificacao ou Codigo, Nome da conta contabil ou Nome, e meses como Jan, Fevereiro ou 01/2025.";
+    "Classificacao ou Codigo, Nome da conta contabil ou Nome, e meses como Jan, Fevereiro ou 01/2025. Para balancete mensal, use Saldo Atual e escolha o mes do upload.";
 
   if (!layout.codeColumn || !layout.nameColumn || layout.monthColumns.length === 0) {
     return `Arquivo lido, mas o layout nao foi reconhecido. Esperado: ${expectedColumns}`;
@@ -253,11 +294,8 @@ export function parseMovementFile(
   fileData: ArrayBuffer,
   options: ParseMovementFileOptions = {}
 ): ParseMovementFileResult {
-  let workbook: XLSX.WorkBook;
-
-  try {
-    workbook = XLSX.read(fileData, { type: "array" });
-  } catch {
+  const workbook = readWorkbook(fileData);
+  if (!workbook) {
     return {
       rows: [],
       headers: [],
@@ -285,15 +323,18 @@ export function parseMovementFile(
   const headers = collectHeaders(imported);
   const layout = summarizeLayout(headers);
 
+  if (layout.monthColumns.length === 0) {
+    return { rows: [], headers, layout };
+  }
+
   const rows = imported.flatMap((row) => {
-    const code = String(getRowValue(row, CODE_ALIASES)).trim();
+    const { code, reducedCode } = resolveAccountIdentifiers(row);
     const name = String(getRowValue(row, NAME_ALIASES)).trim();
 
     if (!code || !name) {
       return [];
     }
 
-    const reducedCode = String(getRowValue(row, REDUCED_CODE_ALIASES)).trim();
     const rawLevel = getRowValue(row, LEVEL_ALIASES);
     const rawType = String(getRowValue(row, TYPE_ALIASES)).trim();
     const category = String(getRowValue(row, CATEGORY_ALIASES)).trim();
@@ -309,7 +350,7 @@ export function parseMovementFile(
     return [
       {
         code,
-        reduced_code: reducedCode || undefined,
+        reduced_code: reducedCode,
         name,
         level: inferLevel(code, rawLevel),
         values,
@@ -321,4 +362,112 @@ export function parseMovementFile(
   });
 
   return { rows, headers, layout };
+}
+
+export function parseMonthlyBalanceteFile(
+  fileData: ArrayBuffer,
+  monthIndex: number
+): ParseMovementFileResult {
+  const workbook = readWorkbook(fileData);
+  if (!workbook) {
+    return {
+      rows: [],
+      headers: [],
+      layout: { codeColumn: null, nameColumn: null, monthColumns: [], balanceColumn: null },
+      fileError:
+        "Nao foi possivel ler o arquivo enviado. Envie uma planilha Excel ou CSV valida.",
+    };
+  }
+
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    return {
+      rows: [],
+      headers: [],
+      layout: { codeColumn: null, nameColumn: null, monthColumns: [], balanceColumn: null },
+      fileError: "Nenhuma planilha encontrada no arquivo.",
+    };
+  }
+
+  const sheet = workbook.Sheets[sheetName];
+  const imported = XLSX.utils.sheet_to_json<ImportedRow>(sheet, {
+    defval: "",
+    raw: false,
+  });
+  const headers = collectHeaders(imported);
+  const layout = summarizeLayout(headers);
+
+  if (!layout.codeColumn || !layout.nameColumn || !layout.balanceColumn) {
+    return { rows: [], headers, layout };
+  }
+
+  const rows = imported.flatMap((row) => {
+    const { code, reducedCode } = resolveAccountIdentifiers(row);
+    const name = String(getRowValue(row, NAME_ALIASES)).trim();
+
+    if (!code || !name) {
+      return [];
+    }
+
+    if (inferMovementType(code, "") !== "patrimonial") {
+      return [];
+    }
+
+    const values = new Array(12).fill(0);
+    values[monthIndex] = parseMovementNumber(getRowValue(row, BALANCE_ALIASES));
+
+    return [
+      {
+        code,
+        reduced_code: reducedCode,
+        name,
+        level: inferLevel(code, getRowValue(row, LEVEL_ALIASES)),
+        values,
+        type: "patrimonial",
+        is_mapped: false,
+      } satisfies ParsedMovementRow,
+    ];
+  });
+
+  return { rows, headers, layout };
+}
+
+export function parseBalancetePreviewFile(fileData: ArrayBuffer): BalancetePreviewRow[] {
+  const workbook = readWorkbook(fileData);
+  if (!workbook) {
+    return [];
+  }
+
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    return [];
+  }
+
+  const sheet = workbook.Sheets[sheetName];
+  const imported = XLSX.utils.sheet_to_json<ImportedRow>(sheet, {
+    defval: "",
+    raw: false,
+  });
+
+  return imported.flatMap((row) => {
+    const conta = String(getRowValue(row, ["conta"])).trim();
+    const classificacao = String(getRowValue(row, ["classificacao"])).trim();
+    const nomeContaContabil = String(getRowValue(row, NAME_ALIASES)).trim();
+
+    if (!conta && !classificacao && !nomeContaContabil) {
+      return [];
+    }
+
+    return [
+      {
+        conta,
+        classificacao,
+        nomeContaContabil,
+        saldoAnterior: String(getRowValue(row, PREVIOUS_BALANCE_ALIASES)).trim(),
+        debito: String(getRowValue(row, DEBIT_ALIASES)).trim(),
+        credito: String(getRowValue(row, CREDIT_ALIASES)).trim(),
+        saldoAtual: String(getRowValue(row, BALANCE_ALIASES)).trim(),
+      },
+    ];
+  });
 }

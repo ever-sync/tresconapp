@@ -9,6 +9,7 @@ import {
   List,
   LoaderCircle,
   UploadCloud,
+  X,
 } from "lucide-react";
 import {
   Area,
@@ -127,6 +128,28 @@ function accentClasses(accent: string) {
     default:
       return "text-cyan-300";
   }
+}
+
+const DRE_HIGHLIGHT_ROWS = new Set([
+  "receita bruta",
+  "receita liquida",
+  "lucro operacional",
+  "lucro antes do irpj e csll",
+  "lucro/prejuizo liquido",
+  "resultado ebitda",
+]);
+
+function normalizeLabel(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isHighlightedDreRow(label: string) {
+  return DRE_HIGHLIGHT_ROWS.has(normalizeLabel(label));
 }
 
 function zeroSeries() {
@@ -272,6 +295,14 @@ function DrePageContent() {
     throw new Error("A importacao ainda esta processando. Tente novamente em instantes.");
   }, []);
 
+  function clearSelectedFile() {
+    setSelectedFile(null);
+    setUploadMessage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   async function handleUpload() {
     if (!selectedFile) {
       window.alert("Selecione uma planilha Excel ou CSV para enviar.");
@@ -299,10 +330,7 @@ function DrePageContent() {
           payload.valuesMode === "accumulated" ? "acumulado" : "mensal"
         }${payload.status === "processing" ? ". Processando demonstrativos..." : "."}`
       );
-      setSelectedFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      clearSelectedFile();
       setYear(String(payload.year));
       if (payload.status === "processing" && payload.batchId) {
         await waitForBatch(payload.batchId);
@@ -510,10 +538,18 @@ function DrePageContent() {
         {(selectedFile || uploadProgress !== null || uploadMessage) && (
           <div className="mt-5 space-y-3">
             {selectedFile && (
-              <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] px-5 py-4 text-sm text-slate-300">
-                Arquivo selecionado:{" "}
+              <div className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-white/8 bg-white/[0.03] px-5 py-4 text-sm text-slate-300">
+                <div>Arquivo selecionado:{" "}
                 <span className="font-semibold text-white">{selectedFile.name}</span> • Ano{" "}
-                {year}
+                {year}</div>
+                <button
+                  type="button"
+                  onClick={clearSelectedFile}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                  aria-label="Limpar arquivo selecionado"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             )}
 
@@ -549,16 +585,31 @@ function DrePageContent() {
                 key={row.label}
                 className={cn(
                   "grid grid-cols-[minmax(220px,1fr)_72px_90px] items-center gap-4 rounded-2xl border border-white/6 px-4 py-4",
-                  row.label === "Lucro/Prejuizo Liquido" || row.label === "Resultado EBITDA"
-                    ? "border-cyan-500/25 bg-cyan-500/8"
+                  isHighlightedDreRow(row.label)
+                    ? "border-sky-300/20 bg-[linear-gradient(90deg,rgb(8_38_62),rgb(8_38_59))]"
                     : "bg-white/4"
                 )}
               >
-                <div className={cn("flex items-center gap-3 text-sm font-bold", accentClasses("cyan"))}>
-                  <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
+                <div
+                  className={cn(
+                    "flex items-center gap-3 text-sm font-bold",
+                    isHighlightedDreRow(row.label) ? "text-white" : accentClasses("cyan")
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 rounded-full",
+                      isHighlightedDreRow(row.label) ? "bg-white" : "bg-cyan-400"
+                    )}
+                  />
                   <span className="text-white">{row.label}</span>
                 </div>
-                <div className="text-right text-xs font-semibold text-slate-500">
+                <div
+                  className={cn(
+                    "text-right text-xs font-semibold",
+                    isHighlightedDreRow(row.label) ? "text-cyan-50/90" : "text-slate-500"
+                  )}
+                >
                   {percent(row.percent)}
                 </div>
                 <div className="text-right text-sm font-black tracking-tight text-white">
@@ -625,7 +676,11 @@ function DrePageContent() {
                 key={row.key}
                 className={cn(
                   "grid grid-cols-[260px_repeat(12,minmax(48px,1fr))_120px_90px] items-center px-4 py-4 text-sm",
-                  row.level === 0 ? "bg-white/2" : "bg-transparent"
+                  isHighlightedDreRow(row.label)
+                    ? "border-y border-sky-300/20 bg-[linear-gradient(90deg,rgb(8_38_62),rgb(8_38_59))]"
+                    : row.level === 0
+                      ? "bg-white/2"
+                      : "bg-transparent"
                 )}
               >
                 <div className="flex items-center gap-3">
@@ -633,7 +688,11 @@ function DrePageContent() {
                   <span
                     className={cn(
                       "font-semibold",
-                      row.level === 0 ? "text-white" : "text-slate-300"
+                      isHighlightedDreRow(row.label)
+                        ? "text-white"
+                        : row.level === 0
+                          ? "text-white"
+                          : "text-slate-300"
                     )}
                   >
                     {row.label}
@@ -645,7 +704,11 @@ function DrePageContent() {
                     key={`${row.key}-${data.monthLabels[index]}`}
                     className={cn(
                       "text-center font-bold",
-                      row.level === 0 ? "text-slate-200" : "text-rose-400"
+                      isHighlightedDreRow(row.label)
+                        ? "text-white"
+                        : row.level === 0
+                          ? "text-slate-200"
+                          : "text-rose-400"
                     )}
                   >
                     {compactNumber(value)}
@@ -655,7 +718,12 @@ function DrePageContent() {
                 <div className="text-right font-black text-white">
                   {compactNumber(row.accumulated)}
                 </div>
-                <div className="text-right font-black text-cyan-300">
+                <div
+                  className={cn(
+                    "text-right font-black",
+                    isHighlightedDreRow(row.label) ? "text-cyan-50" : "text-cyan-300"
+                  )}
+                >
                   {percent(row.percent)}
                 </div>
               </div>

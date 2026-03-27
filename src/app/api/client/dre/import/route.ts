@@ -25,6 +25,8 @@ import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
 
+const STALE_IMPORT_WINDOW_MS = 2 * 60 * 1000;
+
 export async function POST(request: NextRequest) {
   let importBatchId: string | undefined;
 
@@ -58,6 +60,26 @@ export async function POST(request: NextRequest) {
     const parsedRows = parseResult.rows;
     if (parsedRows.length === 0) {
       return error(buildInvalidMovementFileMessage(parseResult.layout), 400);
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      await prisma.importBatch.updateMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: auth.clientId,
+          year,
+          kind: "client_dre_upload",
+          status: "processing",
+          started_at: {
+            lt: new Date(Date.now() - STALE_IMPORT_WINDOW_MS),
+          },
+        },
+        data: {
+          status: "failed",
+          error_message: "Importacao anterior encerrada automaticamente no ambiente local.",
+          finished_at: new Date(),
+        },
+      });
     }
 
     const importBatch = await openImportBatch({
@@ -172,46 +194,82 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    const results = await prisma.$transaction(
-      normalizedRows.map((row) =>
-        prisma.monthlyMovement.upsert({
+    const movementPayload = normalizedRows.map((row) => ({
+      accounting_id: auth.accountingId,
+      client_id: auth.clientId!,
+      year,
+      code: row.code,
+      reduced_code: row.reduced_code,
+      name: row.name,
+      level: row.level,
+      values: row.values,
+      type: row.type,
+      category: row.category,
+      is_mapped: row.is_mapped,
+      deleted_at: null,
+    }));
+
+    let resultsCount = movementPayload.length;
+
+    if (process.env.NODE_ENV !== "production") {
+      const importedTypes = Array.from(new Set(normalizedRows.map((row) => row.type)));
+
+      await prisma.$transaction([
+        prisma.monthlyMovement.deleteMany({
           where: {
-            client_id_year_code_type: {
+            client_id: auth.clientId,
+            year,
+            type: { in: importedTypes },
+          },
+        }),
+        prisma.monthlyMovement.createMany({
+          data: movementPayload,
+        }),
+      ]);
+    } else {
+      const results = await prisma.$transaction(
+        normalizedRows.map((row) =>
+          prisma.monthlyMovement.upsert({
+            where: {
+              client_id_year_code_type: {
+                client_id: auth.clientId!,
+                year,
+                code: row.code,
+                type: row.type,
+              },
+            },
+            update: {
+              name: row.name,
+              reduced_code: row.reduced_code,
+              level: row.level,
+              values: row.values,
+              category: row.category,
+              is_mapped: row.is_mapped,
+              deleted_at: null,
+            },
+            create: {
+              accounting_id: auth.accountingId,
               client_id: auth.clientId!,
               year,
               code: row.code,
+              reduced_code: row.reduced_code,
+              name: row.name,
+              level: row.level,
+              values: row.values,
               type: row.type,
+              category: row.category,
+              is_mapped: row.is_mapped,
             },
-          },
-          update: {
-            name: row.name,
-            reduced_code: row.reduced_code,
-            level: row.level,
-            values: row.values,
-            category: row.category,
-            is_mapped: row.is_mapped,
-            deleted_at: null,
-          },
-          create: {
-            accounting_id: auth.accountingId,
-            client_id: auth.clientId!,
-            year,
-            code: row.code,
-            reduced_code: row.reduced_code,
-            name: row.name,
-            level: row.level,
-            values: row.values,
-            type: row.type,
-            category: row.category,
-            is_mapped: row.is_mapped,
-          },
-        })
-      )
-    );
+          })
+        )
+      );
+
+      resultsCount = results.length;
+    }
 
     await updateImportBatchProgress({
       batchId: importBatch.id,
-      processedRows: results.length,
+      processedRows: resultsCount,
     });
 
     const client = await prisma.client.findUnique({
@@ -230,6 +288,25 @@ export async function POST(request: NextRequest) {
       entityId: importBatch.id,
     });
 
+    if (process.env.NODE_ENV !== "production") {
+      await rebuildStatements({
+        accountingId: auth.accountingId,
+        clientId: auth.clientId,
+        year,
+        statementType: "dre",
+      });
+      await completeImportBatch({ batchId: importBatch.id });
+
+      return success({
+        imported: resultsCount,
+        year,
+        valuesMode,
+        status: "ready",
+        batchId: importBatch.id,
+        jobId: null,
+      });
+    }
+
     try {
       const job = await enqueueBackgroundJob({
         type: "rebuild_statements",
@@ -244,7 +321,7 @@ export async function POST(request: NextRequest) {
       });
 
       return success({
-        imported: results.length,
+        imported: resultsCount,
         year,
         valuesMode,
         status: "processing",
@@ -261,7 +338,7 @@ export async function POST(request: NextRequest) {
       await completeImportBatch({ batchId: importBatch.id });
 
       return success({
-        imported: results.length,
+        imported: resultsCount,
         year,
         valuesMode,
         status: "ready",

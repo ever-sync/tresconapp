@@ -3,7 +3,13 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireStaff } from "@/lib/auth-guard";
 import { success, error, handleError } from "@/lib/api-response";
-import { getDfcLineKeyVariants } from "@/lib/dfc-lines";
+import {
+  getCanonicalDfcLineKey,
+  getDfcDerivedTargetMembers,
+  getDfcLabelFromLineKey,
+  getDfcTargetLineKeyVariants,
+  isDfcDerivedTarget,
+} from "@/lib/dfc-lines";
 
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
@@ -27,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (kind === "dfc") {
-      const lineKeys = getDfcLineKeyVariants(target);
+      const lineKeys = getDfcTargetLineKeyVariants(target);
       const mappings = await prisma.dFCLineMapping.findMany({
         where: {
           accounting_id: auth.accountingId,
@@ -35,6 +41,7 @@ export async function GET(request: NextRequest) {
           line_key: { in: lineKeys },
         },
         select: {
+          line_key: true,
           chart_account_id: true,
           account_code_snapshot: true,
           reduced_code_snapshot: true,
@@ -76,10 +83,42 @@ export async function GET(request: NextRequest) {
         ).values()
       );
 
+      const groups = isDfcDerivedTarget(target)
+        ? getDfcDerivedTargetMembers(target)
+            .map((member) => {
+              const memberCanonical = getCanonicalDfcLineKey(member);
+              const groupMappings = mappings.filter(
+                (mapping) => getCanonicalDfcLineKey(mapping.line_key) === memberCanonical
+              );
+              const accounts = Array.from(
+                new Map(
+                  groupMappings.map((mapping) => {
+                    const account = accountsById.get(mapping.chart_account_id);
+                    const item = {
+                      code: account?.code ?? mapping.account_code_snapshot,
+                      reducedCode: account?.reduced_code ?? mapping.reduced_code_snapshot,
+                      name: account?.name ?? mapping.account_code_snapshot,
+                    };
+
+                    return [item.code, item];
+                  })
+                ).values()
+              );
+
+              return {
+                title: getDfcLabelFromLineKey(memberCanonical),
+                total: accounts.length,
+                accounts,
+              };
+            })
+            .filter((group) => group.total > 0)
+        : [];
+
       return success({
         target,
         total: dedupedAccounts.length,
         accounts: dedupedAccounts,
+        groups,
       });
     }
 

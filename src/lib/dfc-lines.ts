@@ -52,6 +52,8 @@ export const DFC_UI_GROUPS: Array<[string, string[]]> = [
       DFC_LINE_LABELS.obrigacoesTributarias,
       DFC_LINE_LABELS.outrasObrigacoes,
       DFC_LINE_LABELS.parcelamentos,
+      "Variacao Ativo",
+      "Variacao Passivo",
     ],
   ],
   [
@@ -78,8 +80,6 @@ export const DFC_UI_GROUPS: Array<[string, string[]]> = [
 
 export const DFC_DERIVED_LINES = [
   "Lucro Ajustado",
-  "Variacao Ativo",
-  "Variacao Passivo",
   "Resultado Operacional",
   "Resultado de Investimento",
   "Resultado Financeiro",
@@ -87,6 +87,26 @@ export const DFC_DERIVED_LINES = [
   "Saldo Final Disponivel",
   "Resultado Geracao de Caixa",
 ];
+
+const DFC_DERIVED_TARGET_MEMBERS = {
+  "Variacao Ativo": [
+    DFC_LINE_LABELS.contasReceber,
+    DFC_LINE_LABELS.adiantamentos,
+    DFC_LINE_LABELS.impostosCompensar,
+    DFC_LINE_LABELS.estoques,
+    DFC_LINE_LABELS.despesasAntecipadas,
+    DFC_LINE_LABELS.outrasContasReceber,
+  ],
+  "Variacao Passivo": [
+    DFC_LINE_LABELS.fornecedores,
+    DFC_LINE_LABELS.obrigacoesTrabalhistas,
+    DFC_LINE_LABELS.obrigacoesTributarias,
+    DFC_LINE_LABELS.outrasObrigacoes,
+    DFC_LINE_LABELS.parcelamentos,
+  ],
+} as const;
+
+export const DFC_VISIBLE_DERIVED_TARGETS = Object.keys(DFC_DERIVED_TARGET_MEMBERS);
 
 function normalizeText(value: string) {
   return value
@@ -125,6 +145,33 @@ export function getDfcLineKeyVariants(value: string): string[] {
     .map(([legacy]) => legacy);
 
   return Array.from(new Set([canonical, ...aliases]));
+}
+
+export function isDfcDerivedTarget(value: string) {
+  return Object.prototype.hasOwnProperty.call(DFC_DERIVED_TARGET_MEMBERS, value);
+}
+
+export function getDfcTargetCanonicalLineKeys(value: string): string[] {
+  if (isDfcDerivedTarget(value)) {
+    return DFC_DERIVED_TARGET_MEMBERS[value as keyof typeof DFC_DERIVED_TARGET_MEMBERS].map((item) =>
+      getCanonicalDfcLineKey(item)
+    );
+  }
+
+  return [getCanonicalDfcLineKey(value)];
+}
+
+export function getDfcDerivedTargetMembers(value: string): string[] {
+  if (!isDfcDerivedTarget(value)) return [];
+  return [...DFC_DERIVED_TARGET_MEMBERS[value as keyof typeof DFC_DERIVED_TARGET_MEMBERS]];
+}
+
+export function getDfcTargetLineKeyVariants(value: string): string[] {
+  return Array.from(
+    new Set(
+      getDfcTargetCanonicalLineKeys(value).flatMap((item) => getDfcLineKeyVariants(item))
+    )
+  );
 }
 
 export function getDfcLabelFromLineKey(value: string) {
