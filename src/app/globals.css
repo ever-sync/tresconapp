@@ -48,6 +48,11 @@
 }
 
 @layer base {
+  :root {
+    --portal-sidebar-width: 292px;
+    --staff-sidebar-width: 292px;
+  }
+
   * {
     @apply border-border;
   }

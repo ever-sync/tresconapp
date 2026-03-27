@@ -8,6 +8,13 @@ import {
   DFC_BALANCETE_IMPORT_KIND_PREFIX,
   parseDfcBalanceteImportMonth,
 } from "@/lib/dfc-balancete";
+import {
+  DFC_VISIBLE_DERIVED_TARGETS,
+  getCanonicalDfcLineKey,
+  getDfcDerivedTargetMembers,
+  getDfcLabelFromLineKey,
+  getDfcTargetLineKeyVariants,
+} from "@/lib/dfc-lines";
 
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
@@ -73,7 +80,13 @@ export async function GET(request: NextRequest) {
       requestedMonth: requestedMonth ?? undefined,
     });
 
-    const [balanceteImports, balanceteDocuments] = await Promise.all([
+    const derivedTargetLineKeys = Array.from(
+      new Set(
+        DFC_VISIBLE_DERIVED_TARGETS.flatMap((target) => getDfcTargetLineKeyVariants(target))
+      )
+    );
+
+    const [balanceteImports, balanceteDocuments, dfcMappings] = await Promise.all([
       prisma.importBatch.findMany({
         where: {
           client_id: client.id,
@@ -106,7 +119,74 @@ export async function GET(request: NextRequest) {
           period_month: true,
         },
       }),
+      prisma.dFCLineMapping.findMany({
+        where: {
+          accounting_id: auth.accountingId,
+          OR: [{ client_id: null }, { client_id: client.id }],
+          line_key: { in: derivedTargetLineKeys },
+        },
+        select: {
+          line_key: true,
+          chart_account_id: true,
+          account_code_snapshot: true,
+          reduced_code_snapshot: true,
+        },
+        orderBy: [{ account_code_snapshot: "asc" }],
+      }),
     ]);
+
+    const chartAccountIds = Array.from(new Set(dfcMappings.map((mapping) => mapping.chart_account_id)));
+    const chartAccounts =
+      chartAccountIds.length > 0
+        ? await prisma.chartOfAccounts.findMany({
+            where: {
+              accounting_id: auth.accountingId,
+              id: { in: chartAccountIds },
+            },
+            select: {
+              id: true,
+              code: true,
+              reduced_code: true,
+              name: true,
+            },
+          })
+        : [];
+
+    const accountsById = new Map(chartAccounts.map((account) => [account.id, account]));
+    const derivedTargetGroups = Object.fromEntries(
+      DFC_VISIBLE_DERIVED_TARGETS.map((target) => {
+        const groups = getDfcDerivedTargetMembers(target)
+          .map((member) => {
+            const memberCanonical = getCanonicalDfcLineKey(member);
+            const memberMappings = dfcMappings.filter(
+              (mapping) => getCanonicalDfcLineKey(mapping.line_key) === memberCanonical
+            );
+
+            const accounts = Array.from(
+              new Map(
+                memberMappings.map((mapping) => {
+                  const account = accountsById.get(mapping.chart_account_id);
+                  const item = {
+                    code: account?.code ?? mapping.account_code_snapshot,
+                    reducedCode: account?.reduced_code ?? mapping.reduced_code_snapshot,
+                    name: account?.name ?? mapping.account_code_snapshot,
+                  };
+                  return [item.code, item];
+                })
+              ).values()
+            );
+
+            return {
+              title: getDfcLabelFromLineKey(memberCanonical),
+              total: accounts.length,
+              accounts,
+            };
+          })
+          .filter((group) => group.total > 0);
+
+        return [target, groups];
+      })
+    );
 
     const latestImportByMonth = new Map<number, (typeof balanceteImports)[number]>();
     for (const item of balanceteImports) {
@@ -150,6 +230,7 @@ export async function GET(request: NextRequest) {
       snapshotStatus: envelope.snapshotStatus,
       mappingVersion: envelope.mappingVersion,
       computedAt: envelope.computedAt,
+      derivedTargetGroups,
     });
   } catch (err) {
     return handleError(err);

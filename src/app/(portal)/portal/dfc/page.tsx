@@ -13,6 +13,8 @@ import {
 import {
   AlertTriangle,
   BarChart3,
+  ChevronDown,
+  ChevronRight,
   FileDown,
   FileUp,
   Landmark,
@@ -61,6 +63,18 @@ type DfcResponse = {
   }>;
   closedRows: Array<{ label: string; value: number }>;
   cards: Array<{ label: string; value: number }>;
+  derivedTargetGroups: Record<
+    string,
+    Array<{
+      title: string;
+      total: number;
+      accounts: Array<{
+        code: string;
+        reducedCode: string | null;
+        name: string;
+      }>;
+    }>
+  >;
   stale: boolean;
   snapshotStatus: string;
   mappingVersion: number;
@@ -125,6 +139,16 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function formatMappedAccountLabel(account: {
+  code: string;
+  reducedCode: string | null;
+  name: string;
+}) {
+  return account.reducedCode
+    ? `${account.reducedCode} - ${account.name}`
+    : `${account.code} - ${account.name}`;
 }
 
 function toSeriesData(labels: string[], values: number[]) {
@@ -213,6 +237,7 @@ function DfcPageContent() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [deletingMonth, setDeletingMonth] = useState<number | null>(null);
+  const [expandedDerivedTargets, setExpandedDerivedTargets] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const availableYears = useMemo(() => {
@@ -282,6 +307,7 @@ function DfcPageContent() {
   const balanceteUploads = data?.balanceteUploads ?? EMPTY_BALANCETE_UPLOADS;
   const cards = data?.cards ?? EMPTY_CARDS;
   const closedRows = data?.closedRows ?? EMPTY_CARDS;
+  const derivedTargetGroups = data?.derivedTargetGroups ?? {};
 
   const chartCards = useMemo(() => {
     return cards.map((card, index) => {
@@ -309,6 +335,13 @@ function DfcPageContent() {
       cards.find((card) => card.label === "Saldo Final Disponivel"),
     ].filter(Boolean) as Array<{ label: string; value: number }>;
   }, [cards]);
+
+  const toggleDerivedTarget = useCallback((label: string) => {
+    setExpandedDerivedTargets((current) => ({
+      ...current,
+      [label]: !current[label],
+    }));
+  }, []);
 
   async function handleOpenQuickPreview(item: DfcResponse["balanceteUploads"][number]) {
     setPreviewMonthLabel(item.label);
@@ -629,43 +662,104 @@ function DfcPageContent() {
 
               <div className="divide-y divide-white/6">
                 {listRows.map((row) => (
-                  <div
-                    key={row.key}
-                    className={cn(
-                      "grid grid-cols-[340px_repeat(12,minmax(78px,1fr))_120px_90px] items-center px-4 py-4 text-sm",
-                      row.kind === "section" ? "bg-white/2" : row.kind === "subtotal" ? "bg-cyan-500/8" : "bg-transparent"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={cn("h-2.5 w-2.5 rounded-full", row.kind === "section" || row.kind === "subtotal" ? "bg-cyan-400" : "bg-slate-500")} />
-                      <span
-                        className={cn(
-                          "font-semibold leading-snug",
-                          row.level === 0 ? "text-white" : "text-slate-400"
-                        )}
-                      >
-                        {row.label}
-                      </span>
-                    </div>
-
-                    {monthLabels.map((item, index) => (
-                      <div
-                        key={`${row.key}-${item}`}
-                        className={cn(
-                          "text-center font-bold",
-                          row.kind === "subtotal" ? "text-cyan-300" : row.level === 0 ? "text-slate-200" : "text-slate-500"
-                        )}
-                      >
-                        {new Intl.NumberFormat("pt-BR").format(row.monthly[index] ?? 0)}
+                  <div key={row.key}>
+                    <div
+                      className={cn(
+                        "grid grid-cols-[340px_repeat(12,minmax(78px,1fr))_120px_90px] items-center px-4 py-4 text-sm",
+                        row.kind === "section" ? "bg-white/2" : row.kind === "subtotal" ? "bg-cyan-500/8" : "bg-transparent"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={cn("h-2.5 w-2.5 rounded-full", row.kind === "section" || row.kind === "subtotal" ? "bg-cyan-400" : "bg-slate-500")} />
+                        <span
+                          className={cn(
+                            "font-semibold leading-snug",
+                            row.level === 0 ? "text-white" : "text-slate-400"
+                          )}
+                        >
+                          {row.label}
+                        </span>
                       </div>
-                    ))}
 
-                    <div className={cn("text-right font-black", row.kind === "subtotal" ? "text-cyan-300" : "text-white")}>
-                      {new Intl.NumberFormat("pt-BR").format(row.accumulated)}
+                      {monthLabels.map((item, index) => (
+                        <div
+                          key={`${row.key}-${item}`}
+                          className={cn(
+                            "text-center font-bold",
+                            row.kind === "subtotal" ? "text-cyan-300" : row.level === 0 ? "text-slate-200" : "text-slate-500"
+                          )}
+                        >
+                          {new Intl.NumberFormat("pt-BR").format(row.monthly[index] ?? 0)}
+                        </div>
+                      ))}
+
+                      <div className={cn("text-right font-black", row.kind === "subtotal" ? "text-cyan-300" : "text-white")}>
+                        {new Intl.NumberFormat("pt-BR").format(row.accumulated)}
+                      </div>
+                      <div className="text-right font-black text-cyan-300">
+                        {row.percent ? `${row.percent.toFixed(1)}%` : "0%"}
+                      </div>
                     </div>
-                    <div className="text-right font-black text-cyan-300">
-                      {row.percent ? `${row.percent.toFixed(1)}%` : "0%"}
-                    </div>
+
+                    {(row.label === "Variacao Ativo" || row.label === "Variacao Passivo") &&
+                    (derivedTargetGroups[row.label]?.length ?? 0) > 0 ? (
+                      <div className="border-t border-white/6 bg-[#0b1525]/85 px-6 py-5">
+                        <button
+                          type="button"
+                          onClick={() => toggleDerivedTarget(row.label)}
+                          className="flex w-full items-center justify-between gap-4 rounded-[1.1rem] border border-white/8 bg-[#0f1a2b] px-4 py-3 text-left transition hover:border-cyan-400/25 hover:bg-[#12203a]"
+                        >
+                          <div className="flex items-center gap-3">
+                            {expandedDerivedTargets[row.label] ? (
+                              <ChevronDown className="h-4 w-4 text-cyan-300" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-cyan-300" />
+                            )}
+                            <div>
+                              <div className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-cyan-300">
+                                Contas vinculadas
+                              </div>
+                              <div className="mt-1 text-sm text-slate-300">
+                                Clique para {expandedDerivedTargets[row.label] ? "fechar" : "abrir"} a visualizacao de {row.label.toLowerCase()}.
+                              </div>
+                            </div>
+                          </div>
+                          <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-cyan-200">
+                            {derivedTargetGroups[row.label]?.reduce((total, group) => total + group.total, 0) ?? 0} conta(s)
+                          </span>
+                        </button>
+
+                        {expandedDerivedTargets[row.label] ? (
+                          <div className="mt-4 grid gap-4">
+                            {derivedTargetGroups[row.label]?.map((group) => (
+                              <div
+                                key={`${row.key}-${group.title}`}
+                                className="rounded-[1.1rem] border border-white/8 bg-[#0f1a2b] px-4 py-4"
+                              >
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                  <div className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-cyan-300">
+                                    {group.title}
+                                  </div>
+                                  <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-cyan-200">
+                                    {group.total} conta(s)
+                                  </span>
+                                </div>
+                                <div className="space-y-2">
+                                  {group.accounts.map((account) => (
+                                    <div
+                                      key={`${group.title}-${account.code}-${account.name}`}
+                                      className="rounded-2xl border border-white/8 bg-[#101d31] px-4 py-3 text-sm text-slate-100"
+                                    >
+                                      {formatMappedAccountLabel(account)}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

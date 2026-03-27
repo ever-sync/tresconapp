@@ -70,7 +70,8 @@ function NavLink({
     <Link
       href={item.href}
       className={cn(
-        "group flex items-center gap-3 rounded-none border-y border-transparent px-4 py-4 text-sm font-medium transition-all duration-200",
+        "group flex items-center gap-3 rounded-none border-y border-transparent py-4 text-sm font-medium transition-all duration-200",
+        collapsed ? "justify-center px-0" : "px-4",
         active
           ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-300 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.16)]"
           : "text-slate-500 hover:bg-white/4 hover:text-slate-100"
@@ -129,7 +130,7 @@ export function PortalSidebar() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.16),transparent_30%),radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.08),transparent_24%)]" />
 
       <div className="relative flex min-h-full flex-col py-5">
-        <div className="flex items-center justify-between gap-3 px-4 pb-5">
+        <div className={cn("relative px-4 pb-5", collapsed ? "flex justify-center" : "flex items-center justify-between gap-3")}>
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl shadow-[0_0_30px_rgba(244,200,79,0.22)]">
               <Image
@@ -156,7 +157,10 @@ export function PortalSidebar() {
           <button
             type="button"
             onClick={() => setCollapsed((value) => !value)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-[#13263e] text-slate-300 shadow-[0_8px_24px_rgba(0,0,0,0.28)] transition hover:bg-[#19314f] hover:text-white",
+              collapsed ? "absolute right-[-12px] top-1/2 z-20 -translate-y-1/2" : "absolute right-[-12px] top-6 z-20"
+            )}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -191,7 +195,10 @@ export function PortalSidebar() {
           <div className="px-4 pb-2">
             <Link
               href="/portal/atendimento"
-              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-100"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-2xl py-3 text-left text-sm font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-100",
+                collapsed ? "justify-center px-0" : "px-3"
+              )}
             >
               <CircleHelp className="h-5 w-5 shrink-0 text-slate-500" />
               {!collapsed && <span>Suporte</span>}
@@ -213,7 +220,10 @@ export function PortalSidebar() {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 border-t border-white/5 px-4 py-4 text-left text-sm font-medium text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300"
+            className={cn(
+              "flex w-full items-center gap-3 border-t border-white/5 py-4 text-left text-sm font-medium text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300",
+              collapsed ? "justify-center px-0" : "px-4"
+            )}
           >
             <LogOut className="h-5 w-5 shrink-0 text-rose-400" />
             {!collapsed && <span>Sair</span>}

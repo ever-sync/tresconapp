@@ -78,7 +78,13 @@ function NavLink({
       href={item.href}
       className={cn(
         "group flex items-center gap-3 rounded-2xl font-medium transition-all duration-200",
-        variant === "sub" ? "px-3 py-2.5 text-xs" : "px-3 py-3 text-sm",
+        variant === "sub"
+          ? collapsed
+            ? "justify-center px-0 py-2.5 text-xs"
+            : "px-3 py-2.5 text-xs"
+          : collapsed
+            ? "justify-center px-0 py-3 text-sm"
+            : "px-3 py-3 text-sm",
         active
           ? "bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20 shadow-[0_0_28px_rgba(14,165,233,0.14)]"
           : highlighted
@@ -207,7 +213,7 @@ export function StaffSidebar() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.18),transparent_28%),radial-gradient(circle_at_20%_20%,rgba(56,189,248,0.08),transparent_22%)]" />
 
       <div className="relative flex min-h-full flex-col px-4 py-5">
-        <div className="relative mb-8 flex items-start justify-between gap-3">
+        <div className={cn("relative mb-8", collapsed ? "flex justify-center" : "flex items-start justify-between gap-3")}>
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl shadow-[0_0_34px_rgba(244,200,79,0.22)]">
               <Image
@@ -234,7 +240,10 @@ export function StaffSidebar() {
           <button
             type="button"
             onClick={() => setCollapsed((value) => !value)}
-            className="mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-[#13263e] text-slate-300 shadow-[0_8px_24px_rgba(0,0,0,0.28)] transition hover:bg-[#19314f] hover:text-white",
+              collapsed ? "absolute right-[-12px] top-1/2 z-20 -translate-y-1/2" : "absolute right-[-12px] top-1 z-20"
+            )}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -267,7 +276,8 @@ export function StaffSidebar() {
             type="button"
             onClick={() => setConfigOpen((value) => !value)}
             className={cn(
-              "flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-medium transition-all duration-200",
+              "flex w-full items-center gap-3 rounded-2xl py-3 text-left text-sm font-medium transition-all duration-200",
+              collapsed ? "justify-center px-0" : "px-3",
               configActive
                 ? "bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20"
                 : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
@@ -326,7 +336,10 @@ export function StaffSidebar() {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-medium text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300"
+            className={cn(
+              "flex w-full items-center gap-3 rounded-2xl py-3 text-left text-sm font-medium text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300",
+              collapsed ? "justify-center px-0" : "px-3"
+            )}
           >
             <LogOut className="h-5 w-5 shrink-0 text-rose-400" />
             {!collapsed && <span>Sair</span>}

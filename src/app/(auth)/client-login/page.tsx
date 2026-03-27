@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { PwaInstallButton } from "@/components/pwa-install-button";
 import { useClientAuthStore } from "@/stores/useClientAuthStore";
 
 const highlights = [
@@ -184,6 +185,10 @@ export default function ClientLoginPage() {
               Use o CNPJ e a senha cadastrada para acessar seus demonstrativos, documentos e o canal
               direto com a contabilidade.
             </p>
+
+            <div className="mt-6">
+              <PwaInstallButton compact />
+            </div>
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               {error ? (

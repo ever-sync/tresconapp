@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { PwaInstallButton } from "@/components/pwa-install-button";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 const highlights = [
@@ -162,6 +163,10 @@ export default function LoginPage() {
             <p className="mt-6 text-sm leading-6 text-slate-400">
               Use seu email corporativo para acessar clientes, parametrizacoes e demonstrativos do escritorio.
             </p>
+
+            <div className="mt-6">
+              <PwaInstallButton compact />
+            </div>
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-5">
               {error ? (
