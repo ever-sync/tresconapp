@@ -108,13 +108,38 @@ const MONTH_NAME_ALIASES: Record<string, number> = {
   december: 11,
 };
 
+function repairMojibake(value: string) {
+  if (!/[ÃÂ]/.test(value)) {
+    return value;
+  }
+
+  const repaired = Buffer.from(value, "latin1").toString("utf8");
+  const originalNoise = (value.match(/[ÃÂ]/g) || []).length;
+  const repairedNoise = (repaired.match(/[ÃÂ]/g) || []).length;
+  const originalReplacement = (value.match(/�/g) || []).length;
+  const repairedReplacement = (repaired.match(/�/g) || []).length;
+
+  if (
+    repairedNoise < originalNoise ||
+    (repairedNoise === originalNoise && repairedReplacement <= originalReplacement)
+  ) {
+    return repaired;
+  }
+
+  return value;
+}
+
 function normalizeText(value: string) {
-  return value
+  return repairMojibake(value)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function readTextCell(value: unknown) {
+  return repairMojibake(String(value ?? "")).trim();
 }
 
 function getNormalizedRowEntries(row: ImportedRow) {
@@ -156,9 +181,9 @@ function readWorkbook(fileData: ArrayBuffer) {
 }
 
 function resolveAccountIdentifiers(row: ImportedRow) {
-  const classification = String(getRowValue(row, ["classificacao"])).trim();
-  const genericCode = String(getRowValue(row, ["codigo", "code", "conta"])).trim();
-  const reducedCandidate = String(getRowValue(row, REDUCED_CODE_ALIASES)).trim();
+  const classification = readTextCell(getRowValue(row, ["classificacao"]));
+  const genericCode = readTextCell(getRowValue(row, ["codigo", "code", "conta"]));
+  const reducedCandidate = readTextCell(getRowValue(row, REDUCED_CODE_ALIASES));
   const code = classification || genericCode;
   const reducedCode =
     (reducedCandidate && reducedCandidate !== code ? reducedCandidate : "") ||
@@ -347,15 +372,15 @@ export function parseMovementFile(
 
   const rows = imported.flatMap((row) => {
     const { code, reducedCode } = resolveAccountIdentifiers(row);
-    const name = String(getRowValue(row, NAME_ALIASES)).trim();
+    const name = readTextCell(getRowValue(row, NAME_ALIASES));
 
     if (!code || !name) {
       return [];
     }
 
     const rawLevel = getRowValue(row, LEVEL_ALIASES);
-    const rawType = String(getRowValue(row, TYPE_ALIASES)).trim();
-    const category = String(getRowValue(row, CATEGORY_ALIASES)).trim();
+    const rawType = readTextCell(getRowValue(row, TYPE_ALIASES));
+    const category = readTextCell(getRowValue(row, CATEGORY_ALIASES));
     const values = new Array(12).fill(0);
 
     for (const [header, rawValue] of Object.entries(row)) {
@@ -421,7 +446,7 @@ export function parseMonthlyBalanceteFile(
 
   const rows = imported.flatMap((row) => {
     const { code, reducedCode } = resolveAccountIdentifiers(row);
-    const name = String(getRowValue(row, NAME_ALIASES)).trim();
+    const name = readTextCell(getRowValue(row, NAME_ALIASES));
 
     if (!code || !name) {
       return [];
@@ -468,9 +493,9 @@ export function parseBalancetePreviewFile(fileData: ArrayBuffer): BalancetePrevi
   });
 
   return imported.flatMap((row) => {
-    const conta = String(getRowValue(row, ["conta"])).trim();
-    const classificacao = String(getRowValue(row, ["classificacao"])).trim();
-    const nomeContaContabil = String(getRowValue(row, NAME_ALIASES)).trim();
+    const conta = readTextCell(getRowValue(row, ["conta"]));
+    const classificacao = readTextCell(getRowValue(row, ["classificacao"]));
+    const nomeContaContabil = readTextCell(getRowValue(row, NAME_ALIASES));
 
     if (!conta && !classificacao && !nomeContaContabil) {
       return [];
@@ -481,10 +506,10 @@ export function parseBalancetePreviewFile(fileData: ArrayBuffer): BalancetePrevi
         conta,
         classificacao,
         nomeContaContabil,
-        saldoAnterior: String(getRowValue(row, PREVIOUS_BALANCE_ALIASES)).trim(),
-        debito: String(getRowValue(row, DEBIT_ALIASES)).trim(),
-        credito: String(getRowValue(row, CREDIT_ALIASES)).trim(),
-        saldoAtual: String(getRowValue(row, BALANCE_ALIASES)).trim(),
+        saldoAnterior: readTextCell(getRowValue(row, PREVIOUS_BALANCE_ALIASES)),
+        debito: readTextCell(getRowValue(row, DEBIT_ALIASES)),
+        credito: readTextCell(getRowValue(row, CREDIT_ALIASES)),
+        saldoAtual: readTextCell(getRowValue(row, BALANCE_ALIASES)),
       },
     ];
   });

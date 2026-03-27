@@ -48,6 +48,25 @@ test("parseMovementFile accepts the official DRE csv-style layout", () => {
   assert.equal(result.rows[0]?.values[11], 1);
 });
 
+test("parseMovementFile accepts the official comparative csv with accented headers", () => {
+  const csv = [
+    "Classificação,Nome da conta contábil,01/2025,02/2025,12/2025",
+    '01.01,ATIVO CIRCULANTE,"7.492.855,31","7.449.119,01","5.492.650,63"',
+  ].join("\n");
+
+  const result = parseMovementFile(new TextEncoder().encode(csv).buffer);
+
+  assert.equal(result.fileError, undefined);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.layout.codeColumn, "ClassificaÃ§Ã£o");
+  assert.equal(result.layout.nameColumn, "Nome da conta contÃ¡bil");
+  assert.equal(result.rows[0]?.code, "01.01");
+  assert.equal(result.rows[0]?.name, "ATIVO CIRCULANTE");
+  assert.equal(result.rows[0]?.values[0], 7492855.31);
+  assert.equal(result.rows[0]?.values[1], 7449119.01);
+  assert.equal(result.rows[0]?.values[11], 5492650.63);
+});
+
 test("parseMovementFile infers level when no level column exists", () => {
   const buffer = toWorkbookBuffer([
     {
