@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import {
   buildDreStatement,
   emptyDreStatement,
+  isLikelyCumulativeDreSummary,
   type DreChartAccountLike,
   type DreMappingLike,
   type DreMovementLike,
@@ -210,6 +211,7 @@ function buildDreCards(lines: DreStatementResult["lines"], activeMonthIndex: num
         (lines.despesasAdministrativas[activeMonthIndex] ?? 0) +
         (lines.despesasComerciais[activeMonthIndex] ?? 0) +
         (lines.despesasTributarias[activeMonthIndex] ?? 0) +
+        (lines.outrasDespesas[activeMonthIndex] ?? 0) +
         (lines.despesasFinanceiras[activeMonthIndex] ?? 0)
     ),
     resultadoLiquido: lines.lucroLiquido[activeMonthIndex] ?? 0,
@@ -225,6 +227,7 @@ function buildDreChart(lines: DreStatementResult["lines"], activeMonthIndex: num
       (lines.despesasAdministrativas[activeMonthIndex] ?? 0) +
         (lines.despesasComerciais[activeMonthIndex] ?? 0) +
         (lines.despesasTributarias[activeMonthIndex] ?? 0) +
+        (lines.outrasDespesas[activeMonthIndex] ?? 0) +
         (lines.despesasFinanceiras[activeMonthIndex] ?? 0)
     ),
     lucro: Math.max(lines.lucroLiquido[activeMonthIndex] ?? 0, 0),
@@ -788,6 +791,7 @@ async function getSnapshotEnvelope<T>(params: {
   build: () => Promise<{ summary: T; metrics?: unknown; status?: SnapshotStatus }>;
   requestedMonth?: number;
   applyMonth?: (payload: T, requestedMonth?: number) => T;
+  shouldRebuildSnapshot?: (payload: T) => boolean;
 }) {
   const mappingVersion = await getAccountingMappingVersion(params.accountingId);
   const currentSnapshot = await findCurrentSnapshot({
@@ -799,13 +803,15 @@ async function getSnapshotEnvelope<T>(params: {
 
   if (currentSnapshot) {
     const payload = toTyped<T>(currentSnapshot.summary_json);
-    return {
-      payload: params.applyMonth ? params.applyMonth(payload, params.requestedMonth) : payload,
-      stale: false,
-      snapshotStatus: currentSnapshot.status,
-      mappingVersion: currentSnapshot.mapping_version,
-      computedAt: currentSnapshot.computed_at.toISOString(),
-    } satisfies SnapshotEnvelope<T>;
+    if (!params.shouldRebuildSnapshot || !params.shouldRebuildSnapshot(payload)) {
+      return {
+        payload: params.applyMonth ? params.applyMonth(payload, params.requestedMonth) : payload,
+        stale: false,
+        snapshotStatus: currentSnapshot.status,
+        mappingVersion: currentSnapshot.mapping_version,
+        computedAt: currentSnapshot.computed_at.toISOString(),
+      } satisfies SnapshotEnvelope<T>;
+    }
   }
 
   const latestSnapshot = await findLatestSnapshot({
@@ -816,13 +822,15 @@ async function getSnapshotEnvelope<T>(params: {
 
   if (latestSnapshot) {
     const payload = toTyped<T>(latestSnapshot.summary_json);
-    return {
-      payload: params.applyMonth ? params.applyMonth(payload, params.requestedMonth) : payload,
-      stale: true,
-      snapshotStatus: latestSnapshot.status,
-      mappingVersion: latestSnapshot.mapping_version,
-      computedAt: latestSnapshot.computed_at.toISOString(),
-    } satisfies SnapshotEnvelope<T>;
+    if (!params.shouldRebuildSnapshot || !params.shouldRebuildSnapshot(payload)) {
+      return {
+        payload: params.applyMonth ? params.applyMonth(payload, params.requestedMonth) : payload,
+        stale: true,
+        snapshotStatus: latestSnapshot.status,
+        mappingVersion: latestSnapshot.mapping_version,
+        computedAt: latestSnapshot.computed_at.toISOString(),
+      } satisfies SnapshotEnvelope<T>;
+    }
   }
 
   const built = await params.build();
@@ -865,6 +873,7 @@ export async function getDreSnapshotEnvelope(params: {
     ...params,
     statementType: "dre",
     applyMonth: applyActiveMonthToDre,
+    shouldRebuildSnapshot: isLikelyCumulativeDreSummary,
     build: async () => ({
       summary: await computeDrePayload(params),
       status: "ready",

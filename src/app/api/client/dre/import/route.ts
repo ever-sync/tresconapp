@@ -27,6 +27,49 @@ export const preferredRegion = "iad1";
 
 const STALE_IMPORT_WINDOW_MS = 2 * 60 * 1000;
 
+function detectAccumulatedLikeValues(rows: Array<{ values: number[] }>) {
+  const scoredRows = rows
+    .map((row) => {
+      const values = row.values.slice(0, 12).map((value) => Math.abs(Number(value) || 0));
+      const nonZeroCount = values.filter((value) => value > 0).length;
+
+      if (nonZeroCount < 3) {
+        return null;
+      }
+
+      let comparisons = 0;
+      let nonDecreasing = 0;
+
+      for (let index = 1; index < values.length; index += 1) {
+        const previous = values[index - 1] ?? 0;
+        const current = values[index] ?? 0;
+
+        if (previous === 0 && current === 0) {
+          continue;
+        }
+
+        comparisons += 1;
+        if (current + 0.005 >= previous) {
+          nonDecreasing += 1;
+        }
+      }
+
+      if (comparisons < 3) {
+        return null;
+      }
+
+      return nonDecreasing / comparisons;
+    })
+    .filter((score): score is number => score !== null);
+
+  if (scoredRows.length === 0) {
+    return false;
+  }
+
+  const accumulatedLikeRows = scoredRows.filter((score) => score >= 0.72).length;
+  return accumulatedLikeRows / scoredRows.length >= 0.55;
+}
+
 export async function POST(request: NextRequest) {
   let importBatchId: string | undefined;
 
@@ -39,10 +82,13 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file");
     const year = Number(String(formData.get("year") ?? "").trim());
+    const requestedValuesMode = String(formData.get("valuesMode") ?? "auto").trim();
     const valuesMode =
-      String(formData.get("valuesMode") ?? "monthly").trim() === "accumulated"
+      requestedValuesMode === "accumulated"
         ? "accumulated"
-        : "monthly";
+        : requestedValuesMode === "monthly"
+          ? "monthly"
+          : "auto";
 
     if (!(file instanceof File)) {
       return error("Arquivo obrigatorio", 400);
@@ -61,6 +107,13 @@ export async function POST(request: NextRequest) {
     if (parsedRows.length === 0) {
       return error(buildInvalidMovementFileMessage(parseResult.layout), 400);
     }
+
+    const effectiveValuesMode =
+      valuesMode === "auto"
+        ? detectAccumulatedLikeValues(parsedRows)
+          ? "accumulated"
+          : "monthly"
+        : valuesMode;
 
     if (process.env.NODE_ENV !== "production") {
       await prisma.importBatch.updateMany({
@@ -187,7 +240,7 @@ export async function POST(request: NextRequest) {
       return {
         ...row,
         values:
-          valuesMode === "accumulated"
+          effectiveValuesMode === "accumulated"
             ? convertAccumulatedToMonthly(row.values)
             : row.values,
         category: row.category || resolvedCategory || undefined,
@@ -300,7 +353,7 @@ export async function POST(request: NextRequest) {
       return success({
         imported: resultsCount,
         year,
-        valuesMode,
+        valuesMode: effectiveValuesMode,
         status: "ready",
         batchId: importBatch.id,
         jobId: null,
@@ -323,7 +376,7 @@ export async function POST(request: NextRequest) {
       return success({
         imported: resultsCount,
         year,
-        valuesMode,
+        valuesMode: effectiveValuesMode,
         status: "processing",
         batchId: importBatch.id,
         jobId: job.id,
@@ -340,7 +393,7 @@ export async function POST(request: NextRequest) {
       return success({
         imported: resultsCount,
         year,
-        valuesMode,
+        valuesMode: effectiveValuesMode,
         status: "ready",
         batchId: importBatch.id,
         jobId: null,

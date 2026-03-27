@@ -24,15 +24,32 @@ export async function GET(request: NextRequest) {
         ]
       : undefined;
 
-    const where: Prisma.ChartOfAccountsWhereInput = {
+    const baseWhere: Prisma.ChartOfAccountsWhereInput = {
       accounting_id: auth.accountingId,
       client_id: null,
-      ...(kind === "dre"
-        ? { report_type: "dre" }
+    };
+
+    const kindFilter: Prisma.ChartOfAccountsWhereInput | null =
+      kind === "dre"
+        ? {
+            OR: [{ report_type: "dre" }, { report_type: null }],
+          }
         : kind === "patrimonial"
-          ? { report_type: "patrimonial" }
-          : {}),
-      ...(textFilter ? { OR: textFilter } : {}),
+          ? {
+              OR: [{ report_type: "patrimonial" }, { report_type: null }],
+            }
+          : null;
+
+    const where: Prisma.ChartOfAccountsWhereInput = {
+      ...baseWhere,
+      ...(kindFilter || textFilter
+        ? {
+            AND: [
+              ...(kindFilter ? [kindFilter] : []),
+              ...(textFilter ? [{ OR: textFilter }] : []),
+            ],
+          }
+        : {}),
     };
 
     const [total, accounts] = await Promise.all([

@@ -214,7 +214,7 @@ function DrePageContent() {
       : String(new Date().getFullYear())
   );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [valuesMode, setValuesMode] = useState<"monthly" | "accumulated">("monthly");
+  const [valuesMode, setValuesMode] = useState<"auto" | "monthly" | "accumulated">("auto");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
@@ -474,11 +474,18 @@ function DrePageContent() {
                 value={valuesMode}
                 onChange={(event) =>
                   setValuesMode(
-                    event.target.value === "accumulated" ? "accumulated" : "monthly"
+                    event.target.value === "accumulated"
+                      ? "accumulated"
+                      : event.target.value === "monthly"
+                        ? "monthly"
+                        : "auto"
                   )
                 }
                 className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
               >
+                <option value="auto" className="bg-slate-900">
+                  Automatico
+                </option>
                 <option value="monthly" className="bg-slate-900">
                   Mensal
                 </option>

@@ -353,6 +353,59 @@ export function convertAccumulatedToMonthly(values: number[]): number[] {
   return result;
 }
 
+function isLikelyAccumulatedSeries(values: number[]): boolean {
+  const normalized = values.slice(0, 12).map((value) => Math.abs(Number(value) || 0));
+  const nonZeroCount = normalized.filter((value) => value > 0).length;
+
+  if (nonZeroCount < 4) {
+    return false;
+  }
+
+  let comparisons = 0;
+  let nonDecreasing = 0;
+
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous = normalized[index - 1] ?? 0;
+    const current = normalized[index] ?? 0;
+
+    if (previous === 0 && current === 0) {
+      continue;
+    }
+
+    comparisons += 1;
+    if (current + 0.005 >= previous) {
+      nonDecreasing += 1;
+    }
+  }
+
+  return comparisons >= 4 && nonDecreasing / comparisons >= 0.72;
+}
+
+function detectAccumulatedMovementValues(movements: DreMovementLike[]): boolean {
+  const scoredRows = movements
+    .filter((movement) => movement.type === "dre")
+    .map((movement) => movement.values)
+    .filter((values) => values.some((value) => Math.abs(value ?? 0) > 0))
+    .map((values) => isLikelyAccumulatedSeries(values));
+
+  if (scoredRows.length === 0) {
+    return false;
+  }
+
+  const accumulatedLikeCount = scoredRows.filter(Boolean).length;
+  return accumulatedLikeCount / scoredRows.length >= 0.55;
+}
+
+export function isLikelyCumulativeDreSummary(statement: Pick<DreStatementResult, "lines">): boolean {
+  const candidates = [
+    statement.lines.receitaBruta,
+    statement.lines.receitaLiquida,
+    statement.lines.lucroOperacional,
+  ].filter((series): series is number[] => Array.isArray(series));
+
+  return candidates.some((series) => isLikelyAccumulatedSeries(series));
+}
+
 export function buildDreStatement(input: {
   year: number;
   movements: DreMovementLike[];
@@ -368,6 +421,9 @@ export function buildDreStatement(input: {
   for (const mapping of input.mappings) {
     mappingByCode.set(mapping.account_code, mapping);
   }
+
+  const treatValuesAsAccumulated =
+    input.treatValuesAsAccumulated ?? detectAccumulatedMovementValues(input.movements);
 
   const categories = createCategoryBuckets();
 
@@ -425,7 +481,7 @@ export function buildDreStatement(input: {
   for (const category of DRE_CATEGORY_KEYS) {
     const rows = getCategoryRows(category);
     for (const movement of rows) {
-      const values = input.treatValuesAsAccumulated
+      const values = treatValuesAsAccumulated
         ? convertAccumulatedToMonthly(movement.values)
         : movement.values;
 
