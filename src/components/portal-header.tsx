@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { NotificationPopover } from "@/components/notification-popover";
+import { usePortalClient } from "@/components/portal-client-provider";
 
 const PORTAL_TITLES: Record<string, string> = {
   "/portal": "Inicio",
@@ -25,6 +26,7 @@ const PORTAL_TITLES: Record<string, string> = {
 
 export function PortalHeader() {
   const pathname = usePathname();
+  const client = usePortalClient();
 
   const title = useMemo(() => {
     return (
@@ -33,6 +35,19 @@ export function PortalHeader() {
       )?.[1] ?? "Portal"
     );
   }, [pathname]);
+
+  const clientInitials = useMemo(() => {
+    if (!client?.name) return "C";
+
+    const initials = client.name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("");
+
+    return initials || "C";
+  }, [client?.name]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/8 bg-[linear-gradient(180deg,rgba(7,17,33,0.96),rgba(8,18,34,0.92))] backdrop-blur md:fixed md:left-[var(--portal-sidebar-width)] md:right-0 md:top-0 md:z-50">
@@ -75,12 +90,14 @@ export function PortalHeader() {
 
           <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/8 bg-white/5 px-2.5 py-2 sm:px-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,#2dd4ff_0%,#1499ff_48%,#0f6dff_100%)] font-bold text-white">
-              C
+              {clientInitials}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white">Cliente</p>
+              <p className="text-sm font-semibold text-white">
+                {client?.name ?? "Cliente"}
+              </p>
               <p className="max-w-[10rem] truncate text-xs text-slate-500 sm:max-w-[13rem]">
-                COCA COLA FEMSA BRASIL LTDA
+                {client?.cnpj ?? "Sessao do portal ativa"}
               </p>
             </div>
             <span className="hidden rounded-full bg-cyan-400/15 px-2 py-1 text-[0.65rem] font-bold uppercase tracking-[0.28em] text-cyan-300 sm:inline-flex">

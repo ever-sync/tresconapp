@@ -20,6 +20,7 @@ import {
 import { ArrowRight, CalendarDays, Filter, FileDown, UploadCloud } from "lucide-react";
 
 import { useClientAuthStore } from "@/stores/useClientAuthStore";
+import { usePortalClient } from "@/components/portal-client-provider";
 import { cn } from "@/lib/utils";
 
 const tabs = ["INÍCIO", "Financeiro", "Contábil", "Fiscal", "Serviços"];
@@ -99,7 +100,7 @@ function money(value: number) {
 }
 
 export default function PortalPage() {
-  const client = useClientAuthStore((state) => state.client);
+  const client = usePortalClient();
   const logout = useClientAuthStore((state) => state.logout);
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
 
