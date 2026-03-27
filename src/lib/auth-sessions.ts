@@ -1,3 +1,6 @@
+import crypto from "crypto";
+import { Prisma } from "@prisma/client";
+
 import prisma from "./prisma";
 import {
   signAccessToken,
@@ -23,6 +26,15 @@ interface SessionTokens {
   refreshToken: string;
 }
 
+function isSessionStoreUnavailable(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === "P2021" || error.code === "P2022";
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return /authsession|table.*does not exist|column.*does not exist/i.test(message);
+}
+
 /**
  * Create a new auth session in the database and return JWT + refresh token.
  */
@@ -30,23 +42,35 @@ export async function createAuthSession(input: CreateSessionInput): Promise<Sess
   const refreshToken = generateRefreshToken();
   const refreshTokenHash = hashToken(refreshToken);
   const expiresAt = new Date(Date.now() + durationToMs(securityConfig.refreshTtl));
+  const sessionId = crypto.randomUUID();
 
-  const session = await prisma.authSession.create({
-    data: {
-      subject_type: input.subjectType,
-      role: input.role,
-      user_id: input.userId,
-      client_id: input.clientId,
-      accounting_id: input.accountingId,
-      refresh_token_hash: refreshTokenHash,
-      expires_at: expiresAt,
-      ip_address: input.ipAddress,
-      user_agent: input.userAgent,
-    },
-  });
+  try {
+    await prisma.authSession.create({
+      data: {
+        id: sessionId,
+        subject_type: input.subjectType,
+        role: input.role,
+        user_id: input.userId,
+        client_id: input.clientId,
+        accounting_id: input.accountingId,
+        refresh_token_hash: refreshTokenHash,
+        expires_at: expiresAt,
+        ip_address: input.ipAddress,
+        user_agent: input.userAgent,
+      },
+    });
+  } catch (error) {
+    if (!isSessionStoreUnavailable(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "[auth-session] Session persistence unavailable, using stateless fallback."
+    );
+  }
 
   const payload: JwtPayload = {
-    sessionId: session.id,
+    sessionId,
     subjectType: input.subjectType,
     role: input.role,
     userId: input.userId,
@@ -69,9 +93,21 @@ export async function rotateAuthSession(
 ): Promise<SessionTokens | null> {
   const oldHash = hashToken(oldRefreshToken);
 
-  const oldSession = await prisma.authSession.findUnique({
-    where: { refresh_token_hash: oldHash },
-  });
+  let oldSession;
+  try {
+    oldSession = await prisma.authSession.findUnique({
+      where: { refresh_token_hash: oldHash },
+    });
+  } catch (error) {
+    if (!isSessionStoreUnavailable(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "[auth-session] Session persistence unavailable, refresh token rotation disabled."
+    );
+    return null;
+  }
 
   if (!oldSession) return null;
   if (oldSession.revoked_at) return null;
@@ -105,10 +141,20 @@ export async function rotateAuthSession(
  */
 export async function revokeSession(refreshToken: string): Promise<void> {
   const hash = hashToken(refreshToken);
-  await prisma.authSession.updateMany({
-    where: { refresh_token_hash: hash, revoked_at: null },
-    data: { revoked_at: new Date() },
-  });
+  try {
+    await prisma.authSession.updateMany({
+      where: { refresh_token_hash: hash, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+  } catch (error) {
+    if (!isSessionStoreUnavailable(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "[auth-session] Session persistence unavailable, skipping session revoke."
+    );
+  }
 }
 
 /**
@@ -123,8 +169,18 @@ export async function revokeAllSessions(
       ? { user_id: subjectId, revoked_at: null }
       : { client_id: subjectId, revoked_at: null };
 
-  await prisma.authSession.updateMany({
-    where,
-    data: { revoked_at: new Date() },
-  });
+  try {
+    await prisma.authSession.updateMany({
+      where,
+      data: { revoked_at: new Date() },
+    });
+  } catch (error) {
+    if (!isSessionStoreUnavailable(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "[auth-session] Session persistence unavailable, skipping bulk revoke."
+    );
+  }
 }
