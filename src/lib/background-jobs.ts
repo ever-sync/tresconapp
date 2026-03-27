@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 
 export const MAX_BACKGROUND_JOB_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 30_000;
+const BACKGROUND_RUNNER_TRIGGER_TIMEOUT_MS = 1_200;
 
 export type BackgroundJobType =
   | "rebuild_statements"
@@ -72,6 +73,48 @@ export async function enqueueBackgroundJob(params: {
   }
 
   return job;
+}
+
+export async function triggerBackgroundJobRunner(params: {
+  origin: string;
+  limit?: number;
+}) {
+  if (process.env.NODE_ENV !== "production") {
+    return false;
+  }
+
+  const origin = params.origin.trim();
+  const internalSecret = process.env.INTERNAL_JOBS_SECRET?.trim();
+  const cronSecret = process.env.CRON_SECRET?.trim();
+
+  if (!origin || (!internalSecret && !cronSecret)) {
+    return false;
+  }
+
+  const url = new URL("/api/internal/jobs/run", origin);
+  const limit = Number.isFinite(params.limit) ? Math.trunc(params.limit ?? 1) : 1;
+  url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 10)));
+
+  const headers: HeadersInit = cronSecret
+    ? { Authorization: `Bearer ${cronSecret}` }
+    : { "x-internal-jobs-secret": internalSecret! };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), BACKGROUND_RUNNER_TRIGGER_TIMEOUT_MS);
+
+  try {
+    await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function claimNextBackgroundJobs(limit = 3) {

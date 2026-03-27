@@ -2,7 +2,10 @@ import { NextRequest } from "next/server";
 
 import { error, handleError, success } from "@/lib/api-response";
 import { requireClient } from "@/lib/auth-guard";
-import { enqueueBackgroundJob } from "@/lib/background-jobs";
+import {
+  enqueueBackgroundJob,
+  triggerBackgroundJobRunner,
+} from "@/lib/background-jobs";
 import {
   buildInvalidMovementFileMessage,
   parseMonthlyBalanceteFile,
@@ -365,6 +368,11 @@ export async function POST(request: NextRequest) {
           source: "client_dfc_import",
         },
         importBatchId: importBatch.id,
+      });
+
+      await triggerBackgroundJobRunner({
+        origin: new URL(request.url).origin,
+        limit: 1,
       });
 
       return success({

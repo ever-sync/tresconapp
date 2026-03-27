@@ -16,12 +16,24 @@ export const preferredRegion = "iad1";
 const DEFAULT_JOB_LIMIT = 2;
 
 function isAuthorized(request: NextRequest) {
-  const configuredSecret = process.env.INTERNAL_JOBS_SECRET?.trim();
-  if (!configuredSecret) {
+  const internalSecret = process.env.INTERNAL_JOBS_SECRET?.trim();
+  const cronSecret = process.env.CRON_SECRET?.trim();
+
+  if (!internalSecret && !cronSecret) {
     return process.env.NODE_ENV !== "production";
   }
 
-  return request.headers.get("x-internal-jobs-secret") === configuredSecret;
+  const headerSecret = request.headers.get("x-internal-jobs-secret")?.trim();
+  const bearerToken = request.headers
+    .get("authorization")
+    ?.match(/^Bearer\s+(.+)$/i)?.[1]
+    ?.trim();
+
+  return (
+    (Boolean(internalSecret) &&
+      (headerSecret === internalSecret || bearerToken === internalSecret)) ||
+    (Boolean(cronSecret) && bearerToken === cronSecret)
+  );
 }
 
 async function processRebuildJob(job: Awaited<ReturnType<typeof claimNextBackgroundJobs>>[number]) {
@@ -76,7 +88,7 @@ async function processSyncMappingJob(job: Awaited<ReturnType<typeof claimNextBac
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handleRunJobs(request: NextRequest) {
   try {
     if (!isAuthorized(request)) {
       return error("Nao autorizado", 401);
@@ -145,4 +157,12 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return handleError(err);
   }
+}
+
+export async function GET(request: NextRequest) {
+  return handleRunJobs(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleRunJobs(request);
 }
