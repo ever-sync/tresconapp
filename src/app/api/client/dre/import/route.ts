@@ -25,7 +25,14 @@ import { resolvePatrimonialCategory } from "@/lib/patrimonial-statement";
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
 
-const STALE_IMPORT_WINDOW_MS = 2 * 60 * 1000;
+const STALE_IMPORT_WINDOW_MS = 30 * 1000;
+
+function isImportAlreadyProcessingError(err: unknown) {
+  return (
+    err instanceof Error &&
+    err.message.toLowerCase().includes("ja existe uma importacao em processamento")
+  );
+}
 
 function detectAccumulatedLikeValues(rows: Array<{ values: number[] }>) {
   const scoredRows = rows
@@ -404,6 +411,14 @@ export async function POST(request: NextRequest) {
       batchId: importBatchId,
       errorMessage: err instanceof Error ? err.message : "Falha ao importar DRE",
     });
+
+    if (isImportAlreadyProcessingError(err)) {
+      return error(
+        "Ja existe uma importacao do DRE em processamento para este cliente/ano. Aguarde alguns segundos e tente novamente.",
+        409
+      );
+    }
+
     return handleError(err);
   }
 }
