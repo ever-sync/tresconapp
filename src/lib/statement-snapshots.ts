@@ -589,8 +589,9 @@ async function computePatrimonialPayload(params: {
   clientId: string;
   year: number;
 }) {
-  const [movements, chartAccounts, mappings] = await Promise.all([
+  const [movements, dreMovements, chartAccounts, mappings] = await Promise.all([
     loadMovements(params.clientId, params.year, "patrimonial"),
+    loadMovements(params.clientId, params.year, "dre"),
     loadChartAccounts(params.accountingId, params.clientId),
     loadPatrimonialMappings(params.accountingId, params.clientId),
   ]);
@@ -602,6 +603,7 @@ async function computePatrimonialPayload(params: {
   return buildPatrimonialStatement({
     year: params.year,
     movements: movements as PatrimonialMovementLike[],
+    dreMovements: dreMovements as PatrimonialMovementLike[],
     chartAccounts: chartAccounts as PatrimonialChartAccountLike[],
     mappings: mappings as PatrimonialMappingLike[],
   });

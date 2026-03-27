@@ -47,7 +47,7 @@ function triggerLocalDreRebuildInBackground(params: {
           accountingId: params.accountingId,
           clientId: params.clientId,
           year: params.year,
-          statementType: "dre",
+          statementType: "all",
         });
         await completeImportBatch({ batchId: params.batchId });
       } catch (err) {

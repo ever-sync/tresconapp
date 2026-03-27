@@ -481,6 +481,7 @@ export function resolvePatrimonialCategory(input: {
 export function buildPatrimonialStatement(input: {
   year: number;
   movements: PatrimonialMovementLike[];
+  dreMovements?: PatrimonialMovementLike[];
   chartAccounts: PatrimonialChartAccountLike[];
   mappings: PatrimonialMappingLike[];
   activeMonthIndex?: number;
@@ -489,23 +490,175 @@ export function buildPatrimonialStatement(input: {
   const chartByCode = buildLookup(input.chartAccounts);
   const categorySeries = createSeriesRecord(CATEGORY_KEYS);
 
-  function getCategoryRows(category: PatrimonialCategoryKey): PatrimonialMovementLike[] {
-    const configuredCodes = input.mappings
+  function getConfiguredCodesForCategory(category: PatrimonialCategoryKey) {
+    return input.mappings
       .filter((mapping) => normalizeCategory(mapping.category) === category)
       .map((mapping) => mapping.account_code);
+  }
+
+  function getConfiguredRows(
+    movements: PatrimonialMovementLike[],
+    configuredCodes: string[]
+  ): { rows: PatrimonialMovementLike[]; exact: boolean } {
+    const exactRows = getLeafMovements(
+      movements.filter((movement) => configuredCodes.includes(movement.code))
+    );
+    if (exactRows.length > 0) {
+      return { rows: exactRows, exact: true };
+    }
+
+    const descendantRows = getLeafMovements(
+      movements.filter((movement) =>
+        configuredCodes.some((code) => isDescendantCode(movement.code, code))
+      )
+    );
+
+    return { rows: descendantRows, exact: false };
+  }
+
+  function scoreConfiguredRows(rows: PatrimonialMovementLike[]) {
+    const monthly = createZeroSeries();
+    for (const row of rows) {
+      for (let index = 0; index < 12; index += 1) {
+        monthly[index] += row.values[index] ?? 0;
+      }
+    }
+
+    return {
+      activeMonths: monthly.filter((value) => Math.abs(value) > 0.0001).length,
+      magnitude: monthly.reduce((total, value) => total + Math.abs(value), 0),
+      rowCount: rows.length,
+    };
+  }
+
+  function rowsToSeries(rows: PatrimonialMovementLike[], transform?: (value: number) => number) {
+    const monthly = createZeroSeries();
+
+    for (const row of rows) {
+      for (let index = 0; index < 12; index += 1) {
+        const value = row.values[index] ?? 0;
+        monthly[index] += transform ? transform(value) : value;
+      }
+    }
+
+    return monthly;
+  }
+
+  function buildResultadoExercicioSeriesFromRows(rows: PatrimonialMovementLike[]) {
+    const revenueRows = rows.filter((row) => row.code.startsWith("03"));
+    const costRows = rows.filter((row) => row.code.startsWith("04"));
+    const resultRows = rows.filter((row) => row.code.startsWith("02.4.04.05"));
+    const extraRows = rows.filter(
+      (row) =>
+        !row.code.startsWith("03") &&
+        !row.code.startsWith("04") &&
+        !row.code.startsWith("02.4.04.05")
+    );
+
+    if (revenueRows.length === 0 && costRows.length === 0 && resultRows.length === 0 && extraRows.length === 0) {
+      return null;
+    }
+
+    const revenueSeries = rowsToSeries(revenueRows);
+    const costSeries = rowsToSeries(costRows, (value) => -Math.abs(value));
+    const resultSeries = rowsToSeries(resultRows);
+    const extraSeries = rowsToSeries(extraRows);
+
+    const periodSeries = revenueSeries.map(
+      (value, index) =>
+        value +
+        (costSeries[index] ?? 0) +
+        (resultSeries[index] ?? 0) +
+        (extraSeries[index] ?? 0)
+    );
+
+    if (revenueRows.length > 0 || costRows.length > 0) {
+      let runningTotal = 0;
+      return periodSeries.map((value) => {
+        runningTotal += value;
+        return runningTotal;
+      });
+    }
+
+    return periodSeries;
+  }
+
+  function seriesMagnitude(values: number[] | null) {
+    if (!values) return 0;
+    return values.reduce((total, value) => total + Math.abs(value ?? 0), 0);
+  }
+
+  function computeConfiguredResultadoExercicioSeries(configuredCodes: string[]) {
+    const patrimonialRows = getConfiguredRows(input.movements, configuredCodes).rows;
+    const dreRows = getConfiguredRows(input.dreMovements ?? [], configuredCodes).rows;
+
+    if (patrimonialRows.length === 0 && dreRows.length === 0) {
+      return null;
+    }
+
+    const patrimonialSeries = buildResultadoExercicioSeriesFromRows(patrimonialRows);
+    const dreSeries = buildResultadoExercicioSeriesFromRows(dreRows);
+
+    if (seriesMagnitude(patrimonialSeries) >= seriesMagnitude(dreSeries)) {
+      return patrimonialSeries;
+    }
+
+    if (dreSeries) {
+      return dreSeries;
+    }
+
+    if (patrimonialSeries) {
+      return patrimonialSeries;
+    }
+
+    return null;
+  }
+
+  function getCategoryRows(category: PatrimonialCategoryKey): PatrimonialMovementLike[] {
+    const configuredCodes = getConfiguredCodesForCategory(category);
 
     if (configuredCodes.length > 0) {
-      const exactConfiguredRows = input.movements.filter((movement) =>
-        configuredCodes.includes(movement.code)
-      );
-      if (exactConfiguredRows.length > 0) {
-        return getLeafMovements(exactConfiguredRows);
+      if (category === "resultado_exercicio" && (input.dreMovements?.length ?? 0) > 0) {
+        const configuredMatches = [
+          {
+            source: "patrimonial",
+            ...getConfiguredRows(input.movements, configuredCodes),
+          },
+          {
+            source: "dre",
+            ...getConfiguredRows(input.dreMovements ?? [], configuredCodes),
+          },
+        ]
+          .filter((option) => option.rows.length > 0)
+          .sort((left, right) => {
+            const leftScore = scoreConfiguredRows(left.rows);
+            const rightScore = scoreConfiguredRows(right.rows);
+
+            if (rightScore.activeMonths !== leftScore.activeMonths) {
+              return rightScore.activeMonths - leftScore.activeMonths;
+            }
+
+            if (Number(right.exact) !== Number(left.exact)) {
+              return Number(right.exact) - Number(left.exact);
+            }
+
+            if (rightScore.magnitude !== leftScore.magnitude) {
+              return rightScore.magnitude - leftScore.magnitude;
+            }
+
+            if (rightScore.rowCount !== leftScore.rowCount) {
+              return rightScore.rowCount - leftScore.rowCount;
+            }
+
+            return left.source.localeCompare(right.source);
+          });
+
+        if (configuredMatches.length > 0) {
+          return configuredMatches[0].rows;
+        }
       }
 
-      const descendantConfiguredRows = input.movements.filter((movement) =>
-        configuredCodes.some((code) => isDescendantCode(movement.code, code))
-      );
-      return getLeafMovements(descendantConfiguredRows);
+      return getConfiguredRows(input.movements, configuredCodes).rows;
     }
 
     const matchedByMovementCategory = input.movements.filter(
@@ -546,6 +699,15 @@ export function buildPatrimonialStatement(input: {
   }
 
   for (const category of CATEGORY_KEYS) {
+    const configuredCodes = getConfiguredCodesForCategory(category);
+    if (category === "resultado_exercicio" && configuredCodes.length > 0) {
+      const specialSeries = computeConfiguredResultadoExercicioSeries(configuredCodes);
+      if (specialSeries) {
+        categorySeries[category] = specialSeries;
+        continue;
+      }
+    }
+
     const rows = getCategoryRows(category);
     for (const movement of rows) {
       for (let index = 0; index < 12; index += 1) {

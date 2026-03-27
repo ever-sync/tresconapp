@@ -17,6 +17,7 @@ import {
   Landmark,
   List,
   LoaderCircle,
+  RefreshCw,
   TrendingUp,
   UploadCloud,
 } from "lucide-react";
@@ -298,6 +299,26 @@ function BalancoPatrimonialPageContent() {
     return () => controller.abort();
   }, [loadPatrimonial]);
 
+  useEffect(() => {
+    function refreshOnFocus() {
+      void loadPatrimonial();
+    }
+
+    function refreshOnVisibility() {
+      if (document.visibilityState === "visible") {
+        void loadPatrimonial();
+      }
+    }
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisibility);
+
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisibility);
+    };
+  }, [loadPatrimonial]);
+
   const waitForBatch = useCallback(async (batchId: string) => {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 1500));
@@ -465,6 +486,16 @@ function BalancoPatrimonialPageContent() {
                 : selectedFile
                   ? `Importar CSV patrimonial ${year}`
                   : `Selecionar CSV patrimonial ${year}`}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void loadPatrimonial()}
+              disabled={loading}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-70"
+              title="Atualizar balanco patrimonial"
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </button>
 
             <button
