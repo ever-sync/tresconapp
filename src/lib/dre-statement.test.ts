@@ -71,3 +71,24 @@ test("buildDreStatement includes Outras Despesas in DRE calculations", () => {
   assert.equal(statement.lines.outrasDespesas[0], -30);
   assert.equal(statement.lines.lair[0], -30);
 });
+
+test("buildDreStatement preserves the source sign for mapped DRE rows", () => {
+  const statement = buildDreStatement({
+    year: 2025,
+    movements: [
+      {
+        code: "07.01",
+        name: "Recuperacao comercial",
+        level: 2,
+        values: [0, 0, 0, 0, 0, 0, 0, 0, 0, 13536, 0, 0],
+        type: "dre",
+      },
+    ],
+    chartAccounts: [],
+    mappings: [{ account_code: "07.01", category: "Despesas Comerciais" }],
+    activeMonthIndex: 9,
+  });
+
+  assert.equal(statement.lines.despesasComerciais[9], 13536);
+  assert.equal(statement.lines.lair[9], 13536);
+});

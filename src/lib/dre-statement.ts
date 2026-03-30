@@ -231,12 +231,8 @@ function createCategoryBuckets(): Record<DreCategoryKey, number[]> {
   }, {} as Record<DreCategoryKey, number[]>);
 }
 
-function negativeSeries(values: number[]): number[] {
-  return values.map((value) => -Math.abs(value));
-}
-
-function positiveSeries(values: number[]): number[] {
-  return values.map((value) => Math.abs(value));
+function copySeries(values: number[]): number[] {
+  return values.slice(0, 12).map((value) => Number(value) || 0);
 }
 
 function seriesTotal(values: number[]): number {
@@ -491,24 +487,24 @@ export function buildDreStatement(input: {
     }
   }
 
-  const receitaBruta = positiveSeries(categories.receita_bruta);
-  const deducoes = negativeSeries(categories.deducoes_vendas);
+  const receitaBruta = copySeries(categories.receita_bruta);
+  const deducoes = copySeries(categories.deducoes_vendas);
   const receitaLiquida = receitaBruta.map((value, index) => value + deducoes[index]);
-  const custosVendas = negativeSeries(categories.custos_vendas);
-  const custosServicos = negativeSeries(categories.custos_servicos);
+  const custosVendas = copySeries(categories.custos_vendas);
+  const custosServicos = copySeries(categories.custos_servicos);
   const lucroOperacional = receitaLiquida.map(
     (value, index) => value + custosVendas[index] + custosServicos[index]
   );
-  const despesasAdministrativas = negativeSeries(categories.despesas_administrativas);
-  const despesasComerciais = negativeSeries(categories.despesas_comerciais);
-  const despesasTributarias = negativeSeries(categories.despesas_tributarias);
-  const outrasDespesas = negativeSeries(categories.outras_despesas);
-  const resultadoParticipacoesSocietarias = positiveSeries(
+  const despesasAdministrativas = copySeries(categories.despesas_administrativas);
+  const despesasComerciais = copySeries(categories.despesas_comerciais);
+  const despesasTributarias = copySeries(categories.despesas_tributarias);
+  const outrasDespesas = copySeries(categories.outras_despesas);
+  const resultadoParticipacoesSocietarias = copySeries(
     categories.resultado_participacoes_societarias
   );
-  const outrasReceitas = positiveSeries(categories.outras_receitas);
-  const receitasFinanceiras = positiveSeries(categories.receitas_financeiras);
-  const despesasFinanceiras = negativeSeries(categories.despesas_financeiras);
+  const outrasReceitas = copySeries(categories.outras_receitas);
+  const receitasFinanceiras = copySeries(categories.receitas_financeiras);
+  const despesasFinanceiras = copySeries(categories.despesas_financeiras);
   const lair = lucroOperacional.map(
     (value, index) =>
       value +
@@ -521,9 +517,9 @@ export function buildDreStatement(input: {
       receitasFinanceiras[index] +
       despesasFinanceiras[index]
   );
-  const irpjCsll = negativeSeries(categories.irpj_csll);
+  const irpjCsll = copySeries(categories.irpj_csll);
   const lucroLiquido = lair.map((value, index) => value + irpjCsll[index]);
-  const depreciacaoAmortizacao = negativeSeries(categories.depreciacao_amortizacao);
+  const depreciacaoAmortizacao = copySeries(categories.depreciacao_amortizacao);
   const resultadoFinanceiro = receitasFinanceiras.map(
     (value, index) => value + despesasFinanceiras[index]
   );
