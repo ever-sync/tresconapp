@@ -235,6 +235,14 @@ function copySeries(values: number[]): number[] {
   return values.slice(0, 12).map((value) => Number(value) || 0);
 }
 
+function invertedSeries(values: number[]): number[] {
+  return copySeries(values).map((value) => -value);
+}
+
+function alwaysNegativeSeries(values: number[]): number[] {
+  return copySeries(values).map((value) => (value === 0 ? 0 : -Math.abs(value)));
+}
+
 function seriesTotal(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
@@ -275,6 +283,14 @@ function isDescendantCode(code: string, parentCode: string): boolean {
 function getLeafMovements<T extends { code: string }>(rows: T[]): T[] {
   const codes = rows.map((row) => row.code);
   return rows.filter((row) => !hasChildren(row.code, codes));
+}
+
+function dedupeMovementsByCode<T extends { code: string }>(rows: T[]): T[] {
+  const byCode = new Map<string, T>();
+  for (const row of rows) {
+    byCode.set(row.code, row);
+  }
+  return Array.from(byCode.values());
 }
 
 function normalizeCategory(category: string | null | undefined): DreCategoryKey | null {
@@ -429,17 +445,25 @@ export function buildDreStatement(input: {
       .map((mapping) => mapping.account_code);
 
     if (configuredCodes.length > 0) {
-      const exactConfiguredRows = input.movements.filter((movement) =>
-        configuredCodes.includes(movement.code)
-      );
-      if (exactConfiguredRows.length > 0) {
-        return getLeafMovements(exactConfiguredRows);
-      }
+      const selectedRows = dedupeMovementsByCode(
+        configuredCodes.flatMap((configuredCode) => {
+          const exactConfiguredRows = input.movements.filter(
+            (movement) => movement.code === configuredCode
+          );
+          if (exactConfiguredRows.length > 0) {
+            return getLeafMovements(exactConfiguredRows);
+          }
 
-      const descendantConfiguredRows = input.movements.filter((movement) =>
-        configuredCodes.some((code) => isDescendantCode(movement.code, code))
+          const descendantConfiguredRows = input.movements.filter((movement) =>
+            isDescendantCode(movement.code, configuredCode)
+          );
+          return getLeafMovements(descendantConfiguredRows);
+        })
       );
-      return getLeafMovements(descendantConfiguredRows);
+
+      if (selectedRows.length > 0) {
+        return selectedRows;
+      }
     }
 
     const matchedByMovementCategory = input.movements.filter(
@@ -488,23 +512,23 @@ export function buildDreStatement(input: {
   }
 
   const receitaBruta = copySeries(categories.receita_bruta);
-  const deducoes = copySeries(categories.deducoes_vendas);
+  const deducoes = alwaysNegativeSeries(categories.deducoes_vendas);
   const receitaLiquida = receitaBruta.map((value, index) => value + deducoes[index]);
-  const custosVendas = copySeries(categories.custos_vendas);
-  const custosServicos = copySeries(categories.custos_servicos);
+  const custosVendas = invertedSeries(categories.custos_vendas);
+  const custosServicos = invertedSeries(categories.custos_servicos);
   const lucroOperacional = receitaLiquida.map(
     (value, index) => value + custosVendas[index] + custosServicos[index]
   );
-  const despesasAdministrativas = copySeries(categories.despesas_administrativas);
-  const despesasComerciais = copySeries(categories.despesas_comerciais);
-  const despesasTributarias = copySeries(categories.despesas_tributarias);
-  const outrasDespesas = copySeries(categories.outras_despesas);
+  const despesasAdministrativas = invertedSeries(categories.despesas_administrativas);
+  const despesasComerciais = invertedSeries(categories.despesas_comerciais);
+  const despesasTributarias = invertedSeries(categories.despesas_tributarias);
+  const outrasDespesas = invertedSeries(categories.outras_despesas);
   const resultadoParticipacoesSocietarias = copySeries(
     categories.resultado_participacoes_societarias
   );
   const outrasReceitas = copySeries(categories.outras_receitas);
   const receitasFinanceiras = copySeries(categories.receitas_financeiras);
-  const despesasFinanceiras = copySeries(categories.despesas_financeiras);
+  const despesasFinanceiras = invertedSeries(categories.despesas_financeiras);
   const lair = lucroOperacional.map(
     (value, index) =>
       value +
@@ -517,9 +541,9 @@ export function buildDreStatement(input: {
       receitasFinanceiras[index] +
       despesasFinanceiras[index]
   );
-  const irpjCsll = copySeries(categories.irpj_csll);
+  const irpjCsll = invertedSeries(categories.irpj_csll);
   const lucroLiquido = lair.map((value, index) => value + irpjCsll[index]);
-  const depreciacaoAmortizacao = copySeries(categories.depreciacao_amortizacao);
+  const depreciacaoAmortizacao = invertedSeries(categories.depreciacao_amortizacao);
   const resultadoFinanceiro = receitasFinanceiras.map(
     (value, index) => value + despesasFinanceiras[index]
   );

@@ -51,6 +51,46 @@ test("buildDreStatement prioritizes exact configured rows over descendants", () 
   assert.equal(statement.lines.receitaBruta[0], 50);
 });
 
+test("buildDreStatement resolves mapped rows per configured code", () => {
+  const statement = buildDreStatement({
+    year: 2025,
+    movements: [
+      {
+        code: "03.1.05.01.0002",
+        name: "Amostra Gratis",
+        level: 4,
+        values: [0, 0, 0, 0, 0, 0, 0, 0, 0, 25, 0, 0],
+        type: "dre",
+      },
+      {
+        code: "03.1.05.01.0006",
+        name: "Outras Receitas",
+        level: 4,
+        values: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 330427.22, 77642.85],
+        type: "dre",
+      },
+      {
+        code: "03.2",
+        name: "Outras Receitas",
+        level: 2,
+        values: [0, 0, 47400, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        type: "dre",
+      },
+    ],
+    chartAccounts: [],
+    mappings: [
+      { account_code: "03.1.05", category: "Outras Receitas" },
+      { account_code: "03.2", category: "Outras Receitas" },
+    ],
+    activeMonthIndex: 9,
+  });
+
+  assert.equal(statement.lines.outrasReceitas[2], 47400);
+  assert.equal(statement.lines.outrasReceitas[9], 25);
+  assert.equal(statement.lines.outrasReceitas[10], 330427.22);
+  assert.equal(statement.lines.outrasReceitas[11], 77642.85);
+});
+
 test("buildDreStatement includes Outras Despesas in DRE calculations", () => {
   const statement = buildDreStatement({
     year: 2025,
@@ -72,7 +112,7 @@ test("buildDreStatement includes Outras Despesas in DRE calculations", () => {
   assert.equal(statement.lines.lair[0], -30);
 });
 
-test("buildDreStatement preserves the source sign for mapped DRE rows", () => {
+test("buildDreStatement inverts expense lines while preserving reversals", () => {
   const statement = buildDreStatement({
     year: 2025,
     movements: [
@@ -80,7 +120,7 @@ test("buildDreStatement preserves the source sign for mapped DRE rows", () => {
         code: "07.01",
         name: "Recuperacao comercial",
         level: 2,
-        values: [0, 0, 0, 0, 0, 0, 0, 0, 0, 13536, 0, 0],
+        values: [0, 0, 0, 0, 0, 0, 0, 0, 0, -13536, 0, 0],
         type: "dre",
       },
     ],
@@ -91,4 +131,36 @@ test("buildDreStatement preserves the source sign for mapped DRE rows", () => {
 
   assert.equal(statement.lines.despesasComerciais[9], 13536);
   assert.equal(statement.lines.lair[9], 13536);
+});
+
+test("buildDreStatement subtracts positive cost rows from operational profit", () => {
+  const statement = buildDreStatement({
+    year: 2025,
+    movements: [
+      {
+        code: "03.01",
+        name: "Receita",
+        level: 2,
+        values: [1000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        type: "dre",
+      },
+      {
+        code: "04.01",
+        name: "Custo",
+        level: 2,
+        values: [300, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        type: "dre",
+      },
+    ],
+    chartAccounts: [],
+    mappings: [
+      { account_code: "03.01", category: "Receita Bruta" },
+      { account_code: "04.01", category: "Custos das Vendas" },
+    ],
+    activeMonthIndex: 0,
+  });
+
+  assert.equal(statement.lines.receitaBruta[0], 1000);
+  assert.equal(statement.lines.custosVendas[0], -300);
+  assert.equal(statement.lines.lucroOperacional[0], 700);
 });

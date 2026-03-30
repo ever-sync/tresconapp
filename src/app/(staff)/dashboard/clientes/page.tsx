@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   ToggleLeft,
   ToggleRight,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -127,10 +128,14 @@ function ClientCardView({
   client,
   onToggle,
   onEdit,
+  onDelete,
+  deleting,
 }: {
   client: ClientRecord;
   onToggle: (client: ClientRecord) => void;
   onEdit: (client: ClientRecord) => void;
+  onDelete: (client: ClientRecord) => void;
+  deleting: boolean;
 }) {
   return (
     <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
@@ -191,6 +196,20 @@ function ClientCardView({
 
             <button
               type="button"
+              onClick={() => onDelete(client)}
+              disabled={deleting}
+              className="inline-flex items-center gap-2 rounded-full border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.18em] text-rose-300 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deleting ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Excluir
+            </button>
+
+            <button
+              type="button"
               onClick={() => onToggle(client)}
               className="text-cyan-300 transition hover:text-cyan-200"
               aria-label={client.active ? "Desativar cliente" : "Ativar cliente"}
@@ -244,6 +263,7 @@ export default function ClientesPage() {
   const [cnpjLookupLoading, setCnpjLookupLoading] = useState(false);
   const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
   const [lastLookupCnpj, setLastLookupCnpj] = useState("");
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -476,6 +496,40 @@ export default function ClientesPage() {
     }
   }
 
+  async function deleteClient(client: ClientRecord) {
+    const confirmed = window.confirm(
+      `Excluir a empresa ${client.name} e todos os dados vinculados a ela? Esta acao nao podera ser desfeita.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingClientId(client.id);
+
+    try {
+      const response = await fetch(`/api/clients/${client.id}`, {
+        method: "DELETE",
+      });
+
+      const result = (await response.json()) as {
+        error?: string;
+        deleted?: boolean;
+      };
+
+      if (!response.ok || !result.deleted) {
+        throw new Error(result.error || "Nao foi possivel excluir o cliente");
+      }
+
+      setClients((current) => current.filter((item) => item.id !== client.id));
+      window.alert(`Cliente ${client.name} excluido com sucesso.`);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Nao foi possivel excluir o cliente");
+    } finally {
+      setDeletingClientId(null);
+    }
+  }
+
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -553,6 +607,8 @@ export default function ClientesPage() {
                 client={client}
                 onToggle={toggleClient}
                 onEdit={openEditModal}
+                onDelete={deleteClient}
+                deleting={deletingClientId === client.id}
               />
             ))}
           </div>

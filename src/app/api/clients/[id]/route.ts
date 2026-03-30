@@ -145,3 +145,72 @@ export async function PATCH(
     return handleError(err);
   }
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const auth = await requireStaff();
+    const { id } = await params;
+
+    const existingClient = await prisma.client.findFirst({
+      where: {
+        id,
+        accounting_id: auth.accountingId,
+        deleted_at: null,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!existingClient) {
+      return error("Cliente nao encontrado", 404);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.authSession.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      });
+
+      await tx.accountActionToken.deleteMany({
+        where: {
+          client_id: id,
+        },
+      });
+
+      await tx.auditEvent.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      });
+
+      await tx.chartOfAccounts.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      });
+
+      await tx.client.delete({
+        where: {
+          id,
+        },
+      });
+    });
+
+    return success({
+      deleted: true,
+      clientId: id,
+      clientName: existingClient.name,
+    });
+  } catch (err) {
+    return handleError(err);
+  }
+}
