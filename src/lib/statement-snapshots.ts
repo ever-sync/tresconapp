@@ -1,3 +1,5 @@
+import { readFile } from "fs/promises";
+import { isAbsolute, resolve } from "path";
 import { Prisma } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
@@ -21,11 +23,13 @@ import {
 import {
   buildDfcStatement,
   emptyDfcStatement,
+  type DfcMonthlyBalanceteLike,
   type DfcMappingLike,
   type DfcMovementLike,
   type DfcStatementResult,
 } from "@/lib/dfc-statement";
 import { getCanonicalDfcLineKey } from "@/lib/dfc-lines";
+import { parseMonthlyBalanceteDetailedFile } from "@/lib/movement-import";
 
 export type StatementType = "dre" | "patrimonial" | "dfc";
 export type SnapshotStatus = "ready" | "partial" | "failed";
@@ -561,6 +565,63 @@ async function loadMovements(clientId: string, year: number, type: "dre" | "patr
   }));
 }
 
+async function loadDfcBalanceteRowsByMonth(clientId: string, year: number) {
+  const documents = await prisma.clientDocument.findMany({
+    where: {
+      client_id: clientId,
+      period_year: year,
+      document_type: "dfc_balancete_import",
+      deleted_at: null,
+    },
+    select: {
+      period_month: true,
+      storage_path: true,
+      content: true,
+      updated_at: true,
+    },
+    orderBy: [{ period_month: "asc" }, { updated_at: "desc" }],
+  });
+
+  const latestByMonth = new Map<number, (typeof documents)[number]>();
+  for (const document of documents) {
+    const month = document.period_month;
+    if (!month || latestByMonth.has(month)) {
+      continue;
+    }
+    latestByMonth.set(month, document);
+  }
+
+  const monthlyRowsByMonth = Array.from({ length: 12 }, () => undefined as DfcMonthlyBalanceteLike[] | undefined);
+
+  for (const [month, document] of latestByMonth.entries()) {
+    let bytes = document.content ? Buffer.from(document.content) : null;
+
+    if (!bytes && document.storage_path) {
+      const filePath = isAbsolute(document.storage_path)
+        ? document.storage_path
+        : resolve(process.cwd(), document.storage_path);
+
+      try {
+        bytes = await readFile(filePath);
+      } catch {
+        bytes = null;
+      }
+    }
+
+    if (!bytes) {
+      continue;
+    }
+
+    const rows = parseMonthlyBalanceteDetailedFile(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    );
+
+    monthlyRowsByMonth[month - 1] = rows;
+  }
+
+  return monthlyRowsByMonth;
+}
+
 async function computeDrePayload(params: {
   accountingId: string;
   clientId: string;
@@ -615,13 +676,21 @@ async function computeDfcPayload(params: {
   year: number;
   dre?: DreStatementResult;
 }) {
-  const [dre, dreMovements, currentPatrimonialMovements, previousPatrimonialMovements, mappings] =
+  const [
+    dre,
+    dreMovements,
+    currentPatrimonialMovements,
+    previousPatrimonialMovements,
+    mappings,
+    monthlyBalanceteRowsByMonth,
+  ] =
     await Promise.all([
       params.dre ? Promise.resolve(params.dre) : computeDrePayload(params),
       loadMovements(params.clientId, params.year, "dre"),
       loadMovements(params.clientId, params.year, "patrimonial"),
       loadMovements(params.clientId, params.year - 1, "patrimonial"),
       loadDfcMappings(params.accountingId, params.clientId),
+      loadDfcBalanceteRowsByMonth(params.clientId, params.year),
     ]);
 
   if (dreMovements.length === 0 && currentPatrimonialMovements.length === 0 && mappings.length === 0) {
@@ -635,6 +704,7 @@ async function computeDfcPayload(params: {
     previousYearPatrimonialMovements: previousPatrimonialMovements as DfcMovementLike[],
     dreMovements: dreMovements as DfcMovementLike[],
     mappings: mappings as DfcMappingLike[],
+    monthlyBalanceteRowsByMonth,
   });
 }
 

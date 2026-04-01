@@ -43,6 +43,17 @@ export type BalancetePreviewRow = {
   saldoAtual: string;
 };
 
+export type ParsedMonthlyBalanceteDetailedRow = {
+  code: string;
+  reduced_code?: string;
+  name: string;
+  level: number;
+  saldoAnterior: number;
+  debito: number;
+  credito: number;
+  saldoAtual: number;
+};
+
 const CODE_ALIASES = ["classificacao", "codigo", "code", "conta"];
 const REDUCED_CODE_ALIASES = [
   "cod red",
@@ -511,6 +522,48 @@ export function parseBalancetePreviewFile(fileData: ArrayBuffer): BalancetePrevi
         credito: readTextCell(getRowValue(row, CREDIT_ALIASES)),
         saldoAtual: readTextCell(getRowValue(row, BALANCE_ALIASES)),
       },
+    ];
+  });
+}
+
+export function parseMonthlyBalanceteDetailedFile(
+  fileData: ArrayBuffer
+): ParsedMonthlyBalanceteDetailedRow[] {
+  const workbook = readWorkbook(fileData);
+  if (!workbook) {
+    return [];
+  }
+
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    return [];
+  }
+
+  const sheet = workbook.Sheets[sheetName];
+  const imported = XLSX.utils.sheet_to_json<ImportedRow>(sheet, {
+    defval: "",
+    raw: false,
+  });
+
+  return imported.flatMap((row) => {
+    const { code, reducedCode } = resolveAccountIdentifiers(row);
+    const name = readTextCell(getRowValue(row, NAME_ALIASES));
+
+    if (!code || !name) {
+      return [];
+    }
+
+    return [
+      {
+        code,
+        reduced_code: reducedCode,
+        name,
+        level: inferLevel(code, getRowValue(row, LEVEL_ALIASES)),
+        saldoAnterior: parseMovementNumber(getRowValue(row, PREVIOUS_BALANCE_ALIASES)),
+        debito: parseMovementNumber(getRowValue(row, DEBIT_ALIASES)),
+        credito: parseMovementNumber(getRowValue(row, CREDIT_ALIASES)),
+        saldoAtual: parseMovementNumber(getRowValue(row, BALANCE_ALIASES)),
+      } satisfies ParsedMonthlyBalanceteDetailedRow,
     ];
   });
 }
