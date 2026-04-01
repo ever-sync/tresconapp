@@ -13,13 +13,19 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "pt-BR",
     icons: [
       {
-        src: "/trescontas-mark.png",
+        src: "/pwa-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/pwa-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/trescontas-mark.png",
+        src: "/pwa-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

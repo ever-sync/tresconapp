@@ -15,9 +15,12 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    icon: "/trescontas-mark.png",
-    shortcut: "/trescontas-mark.png",
-    apple: "/trescontas-mark.png",
+    icon: [
+      { url: "/pwa-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/pwa-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/pwa-192.png",
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -26,6 +29,8 @@ export const viewport: Viewport = {
   colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 

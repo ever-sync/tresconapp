@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -24,13 +24,6 @@ import { usePortalClient } from "@/components/portal-client-provider";
 import { cn } from "@/lib/utils";
 
 const tabs = ["INÍCIO", "Financeiro", "Contábil", "Fiscal", "Serviços"];
-
-const metrics = [
-  { label: "Receita Bruta", value: "R$ 0", tone: "from-cyan-500/30 to-sky-500/10" },
-  { label: "Custos + Despesas", value: "R$ 0", tone: "from-fuchsia-500/25 to-rose-500/10" },
-  { label: "Resultado Líquido", value: "R$ 0", tone: "from-emerald-500/25 to-teal-500/10" },
-  { label: "IRPJ / CSLL", value: "R$ 0", tone: "from-amber-500/20 to-orange-500/10" },
-];
 
 const monthLabels = [
   "Jan",
@@ -56,7 +49,7 @@ const zeroSeries = monthLabels.map((month) => ({
   margemEbitda: 0,
 }));
 
-const pieData = [
+const emptyPieData = [
   { name: "Custo de Venda", value: 0, color: "#f59e0b" },
   { name: "Desp. Operac.", value: 0, color: "#a855f7" },
   { name: "Impostos", value: 0, color: "#ef4444" },
@@ -68,20 +61,6 @@ const reports = [
   { title: "DRE Consolidado", period: "NOVEMBRO 2025" },
   { title: "Demonstrativo de Fluxo", period: "OUTUBRO 2025" },
   { title: "Relatório de Impostos", period: "SETEMBRO 2025" },
-];
-
-const healthCards = [
-  { label: "Liquidez Corrente", value: "0,00", note: "Sem movimentação", tone: "emerald" },
-  { label: "Margem Líquida", value: "0,0%", note: "Sem resultado", tone: "emerald" },
-  { label: "Margem EBITDA", value: "0,0%", note: "Aguardando dados", tone: "amber" },
-  { label: "Endividamento", value: "0,0%", note: "Sem passivos", tone: "rose" },
-];
-
-const bottomMetrics = [
-  { label: "Margem Líquida", value: "0,0%", note: "Saudável", tone: "emerald" },
-  { label: "EBITDA", value: "R$ 0", note: "Sem base", tone: "violet" },
-  { label: "Margem Bruta", value: "0,0%", note: "Sem base", tone: "cyan" },
-  { label: "Margem EBITDA", value: "0,0%", note: "Sem base", tone: "indigo" },
 ];
 
 const quickActions = [
@@ -99,15 +78,156 @@ function money(value: number) {
   }).format(value);
 }
 
+function ratioPercent(numerator: number, denominator: number) {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+    return 0;
+  }
+  return (Math.abs(numerator) / Math.abs(denominator)) * 100;
+}
+
+type DreDashboardSummary = {
+  monthLabels: string[];
+  cards: {
+    receitaBruta: number;
+    custosDespesas: number;
+    resultadoLiquido: number;
+    irpjCsll: number;
+  };
+  lines: Record<string, number[]>;
+  chart: {
+    custoVenda: number;
+    impostos: number;
+    despesas: number;
+    lucro: number;
+  };
+};
+
 export default function PortalPage() {
   const client = usePortalClient();
   const logout = useClientAuthStore((state) => state.logout);
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [dreSummary, setDreSummary] = useState<DreDashboardSummary | null>(null);
 
   const availableYears = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 7 }, (_, index) => String(currentYear - 3 + index));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadDashboard() {
+      try {
+        const response = await fetch(`/api/dre/summary?year=${selectedYear}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          if (active) setDreSummary(null);
+          return;
+        }
+
+        const payload = (await response.json()) as DreDashboardSummary;
+        if (active) {
+          setDreSummary(payload);
+        }
+      } catch {
+        if (active) setDreSummary(null);
+      }
+    }
+
+    void loadDashboard();
+    return () => {
+      active = false;
+    };
+  }, [selectedYear]);
+
+  const metrics = useMemo(
+    () => [
+      {
+        label: "Receita Bruta",
+        value: money(dreSummary?.cards.receitaBruta ?? 0),
+        tone: "from-cyan-500/30 to-sky-500/10",
+      },
+      {
+        label: "Custos + Despesas",
+        value: money(dreSummary?.cards.custosDespesas ?? 0),
+        tone: "from-fuchsia-500/25 to-rose-500/10",
+      },
+      {
+        label: "Resultado Líquido",
+        value: money(dreSummary?.cards.resultadoLiquido ?? 0),
+        tone: "from-emerald-500/25 to-teal-500/10",
+      },
+      {
+        label: "IRPJ / CSLL",
+        value: money(dreSummary?.cards.irpjCsll ?? 0),
+        tone: "from-amber-500/20 to-orange-500/10",
+      },
+    ],
+    [dreSummary]
+  );
+
+  const chartSeries = useMemo(() => {
+    const labels = dreSummary?.monthLabels?.length ? dreSummary.monthLabels : monthLabels;
+    const receitaBruta = dreSummary?.lines?.receitaBruta ?? [];
+    const custosVendas = dreSummary?.lines?.custosVendas ?? [];
+    const custosServicos = dreSummary?.lines?.custosServicos ?? [];
+    const lucroOperacional = dreSummary?.lines?.lucroOperacional ?? [];
+    const resultadoLiquido = dreSummary?.lines?.resultadoLiquidoExercicio ?? [];
+
+    return labels.map((month, index) => {
+      const receita = receitaBruta[index] ?? 0;
+      const despesa = Math.abs(custosVendas[index] ?? 0) + Math.abs(custosServicos[index] ?? 0);
+      const margemBruta = ratioPercent(receita - despesa, receita);
+      const margemLiquida = ratioPercent(resultadoLiquido[index] ?? 0, receita);
+      const margemEbitda = ratioPercent(lucroOperacional[index] ?? 0, receita);
+      return {
+        month,
+        receita,
+        despesa,
+        margemBruta,
+        margemLiquida,
+        margemEbitda,
+      };
+    });
+  }, [dreSummary]);
+
+  const pieData = useMemo(() => {
+    if (!dreSummary) return emptyPieData;
+    return [
+      { name: "Custo de Venda", value: Math.abs(dreSummary.chart.custoVenda ?? 0), color: "#f59e0b" },
+      { name: "Desp. Operac.", value: Math.abs(dreSummary.chart.despesas ?? 0), color: "#a855f7" },
+      { name: "Impostos", value: Math.abs(dreSummary.chart.impostos ?? 0), color: "#ef4444" },
+      { name: "Lucro", value: dreSummary.chart.lucro ?? 0, color: "#10b981" },
+    ];
+  }, [dreSummary]);
+
+  const bottomMetrics = useMemo(() => {
+    const receita = dreSummary?.cards.receitaBruta ?? 0;
+    const liquido = dreSummary?.cards.resultadoLiquido ?? 0;
+    const custos = dreSummary?.cards.custosDespesas ?? 0;
+    const operacional = dreSummary?.lines?.lucroOperacional?.at(-1) ?? 0;
+
+    return [
+      { label: "Margem Líquida", value: `${ratioPercent(liquido, receita).toFixed(1)}%`, note: "Atual", tone: "emerald" },
+      { label: "EBITDA", value: money(operacional), note: "Último mês", tone: "violet" },
+      { label: "Margem Bruta", value: `${ratioPercent(receita - Math.abs(custos), receita).toFixed(1)}%`, note: "Atual", tone: "cyan" },
+      { label: "Margem EBITDA", value: `${ratioPercent(operacional, receita).toFixed(1)}%`, note: "Atual", tone: "indigo" },
+    ];
+  }, [dreSummary]);
+
+  const healthCards = useMemo(() => {
+    const receita = dreSummary?.cards.receitaBruta ?? 0;
+    const liquido = dreSummary?.cards.resultadoLiquido ?? 0;
+    const operacional = dreSummary?.lines?.lucroOperacional?.at(-1) ?? 0;
+    const custos = dreSummary?.cards.custosDespesas ?? 0;
+    return [
+      { label: "Liquidez Corrente", value: "0,00", note: "Sem base patrimonial", tone: "emerald" },
+      { label: "Margem Líquida", value: `${ratioPercent(liquido, receita).toFixed(1)}%`, note: "Atual", tone: "emerald" },
+      { label: "Margem EBITDA", value: `${ratioPercent(operacional, receita).toFixed(1)}%`, note: "Atual", tone: "amber" },
+      { label: "Peso de Custos", value: `${ratioPercent(custos, receita).toFixed(1)}%`, note: "Receita bruta", tone: "rose" },
+    ];
+  }, [dreSummary]);
 
   return (
     <div className="space-y-4 p-3 sm:space-y-6 sm:p-6 lg:p-8">
@@ -292,7 +412,7 @@ export default function PortalPage() {
 
           <div className="mt-6 h-[260px] sm:h-[330px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <LineChart data={chartSeries.length ? chartSeries : zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
                 <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
@@ -412,7 +532,7 @@ export default function PortalPage() {
 
           <div className="mt-6 h-[260px] sm:h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <LineChart data={chartSeries.length ? chartSeries : zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
                 <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} />
@@ -442,7 +562,7 @@ export default function PortalPage() {
 
           <div className="mt-6 h-[280px] sm:h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <BarChart data={chartSeries.length ? chartSeries : zeroSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
                 <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
