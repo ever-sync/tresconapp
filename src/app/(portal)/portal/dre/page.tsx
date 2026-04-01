@@ -118,6 +118,13 @@ function percent(value: number) {
   return `${Math.round(value)}%`;
 }
 
+function summaryPercent(value: number, amount: number) {
+  if (Math.round(value) === 0 && Math.abs(amount) > 0) {
+    return "--";
+  }
+  return percent(value);
+}
+
 function accentClasses(accent: string) {
   switch (accent) {
     case "pink":
@@ -417,7 +424,7 @@ function DrePageContent() {
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-3xl font-black tracking-tight text-white">
               Relatorio Gerencial DRE
@@ -428,138 +435,146 @@ function DrePageContent() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex rounded-2xl border border-white/6 bg-black/20 p-1">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                const active = view === tab.id;
+          <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
+            <div className="scrollbar-hidden w-full overflow-x-auto lg:w-auto lg:overflow-visible">
+              <div className="inline-flex min-w-full rounded-2xl border border-white/6 bg-black/20 p-1 lg:min-w-0">
+                {tabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = view === tab.id;
 
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setView(tab.id)}
-                    className={cn(
-                      "flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all",
-                      active
-                        ? "bg-slate-800 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)]"
-                        : "text-slate-500 hover:text-slate-200"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {tab.label}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setView(tab.id)}
+                      className={cn(
+                        "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 py-3 text-sm font-semibold transition-all lg:flex-none lg:px-4",
+                        active
+                          ? "bg-slate-800 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)]"
+                          : "text-slate-500 hover:text-slate-200"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div>
-              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Ano
-              </p>
-              <select
-                value={year}
+            <div className="grid w-full grid-cols-2 gap-3 lg:flex lg:w-auto lg:flex-wrap lg:items-end lg:justify-end">
+              <div className="col-span-1">
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                  Ano
+                </p>
+                <select
+                  value={year}
+                  onChange={(event) => {
+                    setYear(event.target.value);
+                    setUploadMessage(null);
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 lg:w-auto"
+                >
+                  {availableYears.map((item) => (
+                    <option key={item} value={item} className="bg-slate-900">
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-1">
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                  Modo
+                </p>
+                <select
+                  value={valuesMode}
+                  onChange={(event) =>
+                    setValuesMode(
+                      event.target.value === "accumulated"
+                        ? "accumulated"
+                        : event.target.value === "monthly"
+                          ? "monthly"
+                          : "auto"
+                    )
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 lg:w-auto"
+                >
+                  <option value="auto" className="bg-slate-900">
+                    Automatico
+                  </option>
+                  <option value="monthly" className="bg-slate-900">
+                    Mensal
+                  </option>
+                  <option value="accumulated" className="bg-slate-900">
+                    Acumulado
+                  </option>
+                </select>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="hidden"
                 onChange={(event) => {
-                  setYear(event.target.value);
+                  const nextFile = event.target.files?.[0] ?? null;
+                  setSelectedFile(nextFile);
                   setUploadMessage(null);
                 }}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedFile) {
+                    void handleUpload();
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
+                disabled={uploading}
+                className="col-span-1 flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-4 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] disabled:cursor-not-allowed disabled:opacity-70 lg:w-auto"
               >
-                {availableYears.map((item) => (
-                  <option key={item} value={item} className="bg-slate-900">
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
+                {uploading ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : selectedFile ? (
+                  <UploadCloud className="h-4 w-4" />
+                ) : (
+                  <FileUp className="h-4 w-4" />
+                )}
+                <span className="truncate">
+                  {uploading
+                    ? "Enviando..."
+                    : selectedFile
+                      ? "Importar CSV"
+                      : "Selecionar CSV"}
+                </span>
+              </button>
 
-            <div>
-              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Modo
-              </p>
-              <select
-                value={valuesMode}
-                onChange={(event) =>
-                  setValuesMode(
-                    event.target.value === "accumulated"
-                      ? "accumulated"
-                      : event.target.value === "monthly"
-                        ? "monthly"
-                        : "auto"
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+              <button
+                type="button"
+                className="col-span-1 flex h-12 w-full items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white lg:w-12"
               >
-                <option value="auto" className="bg-slate-900">
-                  Automatico
-                </option>
-                <option value="monthly" className="bg-slate-900">
-                  Mensal
-                </option>
-                <option value="accumulated" className="bg-slate-900">
-                  Acumulado
-                </option>
-              </select>
+                <Download className="h-4 w-4" />
+              </button>
             </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="hidden"
-              onChange={(event) => {
-                const nextFile = event.target.files?.[0] ?? null;
-                setSelectedFile(nextFile);
-                setUploadMessage(null);
-              }}
-            />
-
-            <button
-              type="button"
-              onClick={() => {
-                if (selectedFile) {
-                  void handleUpload();
-                  return;
-                }
-                fileInputRef.current?.click();
-              }}
-              disabled={uploading}
-              className="flex items-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {uploading ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : selectedFile ? (
-                <UploadCloud className="h-4 w-4" />
-              ) : (
-                <FileUp className="h-4 w-4" />
-              )}
-              {uploading
-                ? "Enviando..."
-                : selectedFile
-                  ? `Importar CSV do balancete ${year}`
-                  : `Selecionar CSV do balancete ${year}`}
-            </button>
-
-            <button
-              type="button"
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
-            >
-              <Download className="h-4 w-4" />
-            </button>
           </div>
         </div>
 
         {(selectedFile || uploadProgress !== null || uploadMessage) && (
           <div className="mt-5 space-y-3">
             {selectedFile && (
-              <div className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-white/8 bg-white/[0.03] px-5 py-4 text-sm text-slate-300">
-                <div>Arquivo selecionado:{" "}
-                <span className="font-semibold text-white">{selectedFile.name}</span> • Ano{" "}
-                {year}</div>
+              <div className="flex flex-col gap-3 rounded-[1.5rem] border border-white/8 bg-white/[0.03] px-5 py-4 text-sm text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  Arquivo selecionado:{" "}
+                  <span className="font-semibold text-white">{selectedFile.name}</span> • Ano{" "}
+                  {year}
+                </div>
                 <button
                   type="button"
                   onClick={clearSelectedFile}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center self-end rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white sm:self-auto"
                   aria-label="Limpar arquivo selecionado"
                 >
                   <X className="h-4 w-4" />
@@ -624,7 +639,7 @@ function DrePageContent() {
                     isHighlightedDreRow(row.label) ? "text-cyan-50/90" : "text-slate-500"
                   )}
                 >
-                  {percent(row.percent)}
+                  {summaryPercent(row.percent, row.value)}
                 </div>
                 <div className="text-right text-sm font-black tracking-tight text-white">
                   {currency(row.value)}
@@ -673,75 +688,79 @@ function DrePageContent() {
 
       {view === "lista" && (
         <section className="overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] shadow-[0_24px_80px_rgba(0,0,0,0.3)]">
-          <div className="grid grid-cols-[260px_repeat(12,minmax(48px,1fr))_120px_90px] border-b border-white/8 bg-white/4 px-4 py-4 text-[0.72rem] font-black uppercase tracking-[0.25em] text-slate-400">
-            <div>Indicador</div>
-            {data.monthLabels.map((m) => (
-              <div key={m} className="text-center">
-                {m.toUpperCase()}
-              </div>
-            ))}
-            <div className="text-center">Acumulado</div>
-            <div className="text-center">%</div>
-          </div>
-
-          <div className="divide-y divide-white/6">
-            {data.rows.map((row) => (
-              <div
-                key={row.key}
-                className={cn(
-                  "grid grid-cols-[260px_repeat(12,minmax(48px,1fr))_120px_90px] items-center px-4 py-4 text-sm",
-                  isHighlightedDreRow(row.label)
-                    ? "border-y border-sky-300/20 bg-[linear-gradient(90deg,rgb(8_38_62),rgb(8_38_59))]"
-                    : row.level === 0
-                      ? "bg-white/2"
-                      : "bg-transparent"
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={cn("text-lg", accentClasses(row.accent))}>•</span>
-                  <span
-                    className={cn(
-                      "font-semibold",
-                      isHighlightedDreRow(row.label)
-                        ? "text-white"
-                        : row.level === 0
-                          ? "text-white"
-                          : "text-slate-300"
-                    )}
-                  >
-                    {row.label}
-                  </span>
-                </div>
-
-                {row.monthly.map((value, index) => (
-                  <div
-                    key={`${row.key}-${data.monthLabels[index]}`}
-                    className={cn(
-                      "text-center font-bold",
-                      isHighlightedDreRow(row.label)
-                        ? "text-white"
-                        : row.level === 0
-                          ? "text-slate-200"
-                          : "text-rose-400"
-                    )}
-                  >
-                    {compactNumber(value)}
+          <div className="overflow-x-auto">
+            <div className="min-w-[1520px]">
+              <div className="grid grid-cols-[260px_repeat(12,minmax(88px,1fr))_140px_90px] border-b border-white/8 bg-white/4 px-4 py-4 text-[0.72rem] font-black uppercase tracking-[0.25em] text-slate-400">
+                <div>Indicador</div>
+                {data.monthLabels.map((m) => (
+                  <div key={m} className="text-center">
+                    {m.toUpperCase()}
                   </div>
                 ))}
-
-                <div className="text-right font-black text-white">
-                  {compactNumber(row.accumulated)}
-                </div>
-                <div
-                  className={cn(
-                    "text-right font-black",
-                    isHighlightedDreRow(row.label) ? "text-cyan-50" : "text-cyan-300"
-                  )}
-                >
-                  {percent(row.percent)}
-                </div>
+                <div className="text-center">Acumulado</div>
+                <div className="text-center">%</div>
               </div>
-            ))}
+
+              <div className="divide-y divide-white/6">
+                {data.rows.map((row) => (
+                  <div
+                    key={row.key}
+                    className={cn(
+                      "grid grid-cols-[260px_repeat(12,minmax(88px,1fr))_140px_90px] items-center px-4 py-4 text-sm",
+                      isHighlightedDreRow(row.label)
+                        ? "border-y border-sky-300/20 bg-[linear-gradient(90deg,rgb(8_38_62),rgb(8_38_59))]"
+                        : row.level === 0
+                          ? "bg-white/2"
+                          : "bg-transparent"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={cn("text-lg", accentClasses(row.accent))}>•</span>
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          isHighlightedDreRow(row.label)
+                            ? "text-white"
+                            : row.level === 0
+                              ? "text-white"
+                              : "text-slate-300"
+                        )}
+                      >
+                        {row.label}
+                      </span>
+                    </div>
+
+                    {row.monthly.map((value, index) => (
+                      <div
+                        key={`${row.key}-${data.monthLabels[index]}`}
+                        className={cn(
+                          "text-center font-bold",
+                          isHighlightedDreRow(row.label)
+                            ? "text-white"
+                            : row.level === 0
+                              ? "text-slate-200"
+                              : "text-rose-400"
+                        )}
+                      >
+                        {compactNumber(value)}
+                      </div>
+                    ))}
+
+                    <div className="text-right font-black text-white">
+                      {compactNumber(row.accumulated)}
+                    </div>
+                    <div
+                      className={cn(
+                        "text-right font-black",
+                        isHighlightedDreRow(row.label) ? "text-cyan-50" : "text-cyan-300"
+                      )}
+                    >
+                      {percent(row.percent)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       )}

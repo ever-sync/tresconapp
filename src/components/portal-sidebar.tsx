@@ -12,13 +12,11 @@ import {
   ClipboardList,
   FileCheck2,
   FileText,
-  CircleHelp,
   LayoutDashboard,
   Landmark,
   LifeBuoy,
   LogOut,
   RefreshCw,
-  Settings2,
   ShieldCheck,
   TrendingUp,
   BookText,
@@ -32,22 +30,23 @@ type NavItem = {
   href: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
+  disabled?: boolean;
 };
 
 const mainItems: NavItem[] = [
   { href: "/portal", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/portal/movimentacoes", label: "Movimentações", icon: ArrowRightLeft },
-  { href: "/portal/fluxo-de-caixa", label: "Fluxo de Caixa", icon: TrendingUp },
-  { href: "/portal/conciliacao-bancaria", label: "Conciliação Bancária", icon: RefreshCw },
+  { href: "/portal/movimentacoes", label: "Movimentações", icon: ArrowRightLeft, disabled: true },
+  { href: "/portal/fluxo-de-caixa", label: "Fluxo de Caixa", icon: TrendingUp, disabled: true },
+  { href: "/portal/conciliacao-bancaria", label: "Conciliação Bancária", icon: RefreshCw, disabled: true },
   { href: "/portal/dre", label: "DRE", icon: BarChart3 },
   { href: "/portal/dfc", label: "DFC", icon: FileText },
   { href: "/portal/balanco-patrimonial", label: "Balanço Patrimonial", icon: Landmark },
-  { href: "/portal/impostos", label: "Impostos", icon: BadgeDollarSign },
-  { href: "/portal/guias", label: "Guias", icon: FileCheck2 },
-  { href: "/portal/folha-de-pagamento", label: "Folha de Pagamento", icon: ClipboardList },
-  { href: "/portal/obrigacoes", label: "Obrigações", icon: ShieldCheck },
+  { href: "/portal/impostos", label: "Impostos", icon: BadgeDollarSign, disabled: true },
+  { href: "/portal/guias", label: "Guias", icon: FileCheck2, disabled: true },
+  { href: "/portal/folha-de-pagamento", label: "Folha de Pagamento", icon: ClipboardList, disabled: true },
+  { href: "/portal/obrigacoes", label: "Obrigações", icon: ShieldCheck, disabled: true },
   { href: "/portal/documentos", label: "Documentos", icon: FileText },
-  { href: "/portal/servicos-contratados", label: "Serviços Contratados", icon: BookText },
+  { href: "/portal/servicos-contratados", label: "Serviços Contratados", icon: BookText, disabled: true },
   { href: "/portal/atendimento", label: "Atendimento", icon: LifeBuoy },
 ];
 
@@ -65,25 +64,52 @@ function NavLink({
   collapsed: boolean;
 }) {
   const Icon = item.icon;
+  const isDisabled = Boolean(item.disabled);
+
+  const content = (
+    <>
+      <Icon
+        className={cn(
+          "h-5 w-5 shrink-0 transition-colors",
+          active ? "text-cyan-300" : isDisabled ? "text-slate-500" : "text-slate-500 group-hover:text-slate-300"
+        )}
+      />
+      {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+      {!collapsed && isDisabled ? (
+        <span className="ml-2 shrink-0 whitespace-nowrap rounded-full border border-slate-400/20 bg-slate-400/10 px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.14em] text-slate-300">
+          Em breve
+        </span>
+      ) : null}
+    </>
+  );
+
+  if (isDisabled) {
+    return (
+      <div
+        aria-disabled="true"
+        className={cn(
+          "group flex min-w-0 items-center gap-3 rounded-2xl border text-sm font-medium transition-all duration-200",
+          collapsed ? "justify-center px-0 py-3.5" : "px-3.5 py-3.5",
+          "cursor-not-allowed border-white/8 bg-white/[0.03] text-slate-500 opacity-75"
+        )}
+      >
+        {content}
+      </div>
+    );
+  }
 
   return (
     <Link
       href={item.href}
       className={cn(
-        "group flex items-center gap-3 rounded-none border-y border-transparent py-4 text-sm font-medium transition-all duration-200",
-        collapsed ? "justify-center px-0" : "px-4",
+        "group flex min-w-0 items-center gap-3 rounded-2xl border text-sm font-medium transition-all duration-200",
+        collapsed ? "justify-center px-0 py-3.5" : "px-3.5 py-3.5",
         active
-          ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-300 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.16)]"
-          : "text-slate-500 hover:bg-white/4 hover:text-slate-100"
+          ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-300 shadow-[0_0_28px_rgba(14,165,233,0.14)]"
+          : "border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-slate-100"
       )}
     >
-      <Icon
-        className={cn(
-          "h-5 w-5 shrink-0 transition-colors",
-          active ? "text-cyan-300" : "text-slate-500 group-hover:text-slate-300"
-        )}
-      />
-      {!collapsed && <span className="truncate">{item.label}</span>}
+      {content}
     </Link>
   );
 }
@@ -177,7 +203,7 @@ export function PortalSidebar() {
           </div>
         )}
 
-        <nav className="scrollbar-hidden flex-1 space-y-1 overflow-y-auto px-0">
+        <nav className="scrollbar-hidden flex-1 space-y-2 overflow-y-auto px-4">
           {mainItems.map((item) => (
             <NavLink
               key={item.href}
@@ -189,31 +215,6 @@ export function PortalSidebar() {
         </nav>
 
         <div className="mt-auto space-y-2 px-0 pt-4">
-          <div className="px-4 pb-2">
-            <Link
-              href="/portal/atendimento"
-              className={cn(
-                "flex w-full items-center gap-3 rounded-2xl py-3 text-left text-sm font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-100",
-                collapsed ? "justify-center px-0" : "px-3"
-              )}
-            >
-              <CircleHelp className="h-5 w-5 shrink-0 text-slate-500" />
-              {!collapsed && <span>Suporte</span>}
-            </Link>
-          </div>
-
-          {!collapsed && (
-            <div className="px-4 pb-2">
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-medium text-slate-500 transition hover:bg-white/5 hover:text-slate-100"
-              >
-                <Settings2 className="h-5 w-5 shrink-0 text-slate-500" />
-                <span className="flex-1">Configuração</span>
-              </button>
-            </div>
-          )}
-
           <button
             type="button"
             onClick={handleLogout}

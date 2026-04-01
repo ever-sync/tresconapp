@@ -153,6 +153,30 @@ function ClientCardView({
             {client.representative_email || "Sem email de acesso"}
           </p>
         </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-bold uppercase",
+              client.active
+                ? "border-blue-400/30 bg-blue-500/10 text-blue-300"
+                : "border-slate-300/25 bg-slate-200/10 text-slate-300"
+            )}
+          >
+            {client.active ? "Ativo" : "Desativado"}
+          </span>
+          <button
+            type="button"
+            onClick={() => onToggle(client)}
+            className="text-cyan-300 transition hover:text-cyan-200"
+            aria-label={client.active ? "Desativar cliente" : "Ativar cliente"}
+          >
+            {client.active ? (
+              <ToggleRight className="h-8 w-8" />
+            ) : (
+              <ToggleLeft className="h-8 w-8" />
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="mt-5 flex items-center gap-2 text-sm text-slate-400">
@@ -162,17 +186,6 @@ function ClientCardView({
 
       <div className="mt-5 border-t border-white/6 pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span
-            className={cn(
-              "inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-bold uppercase",
-              client.active
-                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-400"
-                : "border-slate-500/20 bg-slate-500/10 text-slate-500"
-            )}
-          >
-            {client.active ? "Ativo" : "Inativo"}
-          </span>
-
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/api/auth/staff-client-access?clientId=${encodeURIComponent(client.id)}`}
@@ -208,18 +221,6 @@ function ClientCardView({
               Excluir
             </button>
 
-            <button
-              type="button"
-              onClick={() => onToggle(client)}
-              className="text-cyan-300 transition hover:text-cyan-200"
-              aria-label={client.active ? "Desativar cliente" : "Ativar cliente"}
-            >
-              {client.active ? (
-                <ToggleRight className="h-8 w-8" />
-              ) : (
-                <ToggleLeft className="h-8 w-8" />
-              )}
-            </button>
           </div>
         </div>
       </div>
@@ -533,17 +534,14 @@ export default function ClientesPage() {
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#2dd4ff_0%,#1499ff_48%,#0f6dff_100%)] text-2xl font-semibold text-white shadow-[0_0_30px_rgba(14,165,233,0.45)]">
-              T
-            </div>
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="space-y-4">
             <div>
-              <p className="text-lg font-semibold tracking-tight text-white">
-                TresContas
-              </p>
-              <p className="text-[0.72rem] uppercase tracking-[0.4em] text-slate-500">
-                Contabilidade
+              <h1 className="text-3xl font-black tracking-tight text-white">
+                Lista de Clientes
+              </h1>
+              <p className="mt-1 text-sm text-slate-400">
+                Gerencie todos os seus clientes e os acessos do portal
               </p>
             </div>
           </div>
@@ -586,15 +584,6 @@ export default function ClientesPage() {
       </section>
 
       <section className="space-y-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-white">
-            Lista de Clientes
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Gerencie todos os seus clientes e os acessos do portal
-          </p>
-        </div>
-
         {loading ? (
           <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-8 text-center text-sm text-slate-400">
             Carregando clientes...

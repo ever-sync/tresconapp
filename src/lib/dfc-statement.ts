@@ -31,8 +31,6 @@ export type DfcLineKey =
   | "variacaoEmprestimosPessoasLigadas"
   | "disponibilidadesBase"
   | "lucroAjustado"
-  | "variacaoAtivo"
-  | "variacaoPassivo"
   | "resultadoOperacional"
   | "resultadoInvestimento"
   | "resultadoFinanceiro"
@@ -127,8 +125,6 @@ const DFC_LINE_CONFIG: Array<{
   { key: "obrigacoesTributarias", label: "Obrigacoes Tributarias", section: "operacional", kind: "row", level: 1 },
   { key: "outrasObrigacoes", label: "Outras Obrigacoes", section: "operacional", kind: "row", level: 1 },
   { key: "parcelamentos", label: "Parcelamentos", section: "operacional", kind: "row", level: 1 },
-  { key: "variacaoAtivo", label: "Variacao Ativo", section: "operacional", kind: "subtotal", level: 0 },
-  { key: "variacaoPassivo", label: "Variacao Passivo", section: "operacional", kind: "subtotal", level: 0 },
   { key: "resultadoOperacional", label: "Resultado Operacional", section: "operacional", kind: "subtotal", level: 0 },
   { key: "recebimentosVendasAtivo", label: "Recebimentos por Vendas de Ativo", section: "investimento", kind: "row", level: 1 },
   { key: "comprasImobilizado", label: "Compras de Imobilizado", section: "investimento", kind: "row", level: 1 },
@@ -175,6 +171,20 @@ const CONFIGURABLE_LINE_KEYS = new Set<DfcLineKey>([
   "disponibilidadesBase",
 ]);
 
+const RESULTADO_OPERACIONAL_SOURCE_KEYS: DfcLineKey[] = [
+  "contasReceber",
+  "adiantamentos",
+  "impostosCompensar",
+  "estoques",
+  "despesasAntecipadas",
+  "outrasContasReceber",
+  "fornecedores",
+  "obrigacoesTrabalhistas",
+  "obrigacoesTributarias",
+  "outrasObrigacoes",
+  "parcelamentos",
+];
+
 function createZeroSeries(): number[] {
   return Array.from({ length: 12 }, () => 0);
 }
@@ -187,10 +197,6 @@ function sumValues(series: number[][]): number[] {
     }
   }
   return result;
-}
-
-function multiplySeries(values: number[], factor: number): number[] {
-  return values.map((value) => value * factor);
 }
 
 function addSeries(...series: number[][]): number[] {
@@ -233,89 +239,6 @@ function leafMovements(movements: DfcMovementLike[]): DfcMovementLike[] {
   return movements.filter((movement) => !hasChildren(movement.code, codes));
 }
 
-function aggregateDreSeries(
-  movements: DfcMovementLike[],
-  mappings: DfcMappingLike[]
-): number[] {
-  if (mappings.length === 0) return createZeroSeries();
-  const leaves = leafMovements(movements);
-  const collected: number[][] = [];
-
-  for (const mapping of mappings) {
-    const matched = leaves
-      .filter((movement) =>
-        matchesCode(movement.code, mapping.account_code_snapshot, mapping.include_children)
-      )
-      .map((movement) => multiplySeries(movement.values, mapping.multiplier));
-    if (matched.length > 0) {
-      collected.push(sumValues(matched));
-    }
-  }
-
-  return sumValues(collected);
-}
-
-function aggregateBalanceSeries(
-  currentMovements: DfcMovementLike[],
-  previousDecemberByCode: Map<string, number>,
-  mappings: DfcMappingLike[]
-): number[] {
-  if (mappings.length === 0) return createZeroSeries();
-  const leaves = leafMovements(currentMovements);
-  const collected: number[][] = [];
-
-  for (const mapping of mappings) {
-    const matched = leaves.filter((movement) =>
-      matchesCode(movement.code, mapping.account_code_snapshot, mapping.include_children)
-    );
-
-    const currentSeries = matched.length > 0 ? sumValues(matched.map((movement) => movement.values)) : createZeroSeries();
-    const previousDecember = matched.reduce((total, movement) => {
-      return total + (previousDecemberByCode.get(movement.code) ?? 0);
-    }, 0);
-
-    const deltaSeries = currentSeries.map((value, index) => {
-      const baseline = index === 0 ? previousDecember : currentSeries[index - 1] ?? 0;
-      return (value - baseline) * mapping.multiplier;
-    });
-
-    collected.push(deltaSeries);
-  }
-
-  return sumValues(collected);
-}
-
-function buildPreviousDecemberLookup(movements: DfcMovementLike[]): Map<string, number> {
-  return new Map(movements.map((movement) => [movement.code, movement.values[11] ?? 0]));
-}
-
-function buildEndingBalanceSeries(
-  currentMovements: DfcMovementLike[],
-  mappings: DfcMappingLike[]
-): number[] {
-  if (mappings.length === 0) return createZeroSeries();
-  const leaves = leafMovements(currentMovements);
-  const collected: number[][] = [];
-
-  for (const mapping of mappings) {
-    const matched = leaves
-      .filter((movement) =>
-        matchesCode(movement.code, mapping.account_code_snapshot, mapping.include_children)
-      )
-      .map((movement) => movement.values);
-
-    if (matched.length > 0) {
-      collected.push(sumValues(matched));
-    }
-  }
-
-  return sumValues(collected);
-}
-
-function buildStartingBalanceSeries(endingSeries: number[], previousDecemberBalance: number): number[] {
-  return endingSeries.map((_, index) => (index === 0 ? previousDecemberBalance : endingSeries[index - 1] ?? 0));
-}
-
 function aggregateBalanceteMonth(
   rows: DfcMonthlyBalanceteLike[],
   mappings: DfcMappingLike[],
@@ -335,14 +258,20 @@ function aggregateBalanceteMonth(
   const leafSet = new Set(leaves);
 
   return mappings.reduce((total, mapping) => {
-    const exactMatches = rows.filter((row) => row.code === mapping.account_code_snapshot);
+    const exactMatches = rows.filter(
+      (row) =>
+        row.code === mapping.account_code_snapshot ||
+        (!!mapping.reduced_code_snapshot && row.reduced_code === mapping.reduced_code_snapshot)
+    );
     const matched =
       exactMatches.length > 0
         ? exactMatches
         : rows.filter(
             (row) =>
               leafSet.has(row.code) &&
-              matchesCode(row.code, mapping.account_code_snapshot, mapping.include_children)
+              (matchesCode(row.code, mapping.account_code_snapshot, mapping.include_children) ||
+                (!!mapping.reduced_code_snapshot &&
+                  row.reduced_code === mapping.reduced_code_snapshot))
           );
 
     const sum = matched.reduce((acc, row) => acc + selector(row), 0);
@@ -397,14 +326,69 @@ function computeMappedBalanceteSeries(
       case "parcelamentos":
       case "variacaoEmprestimosFinanciamentos":
       case "dividendosProvisionadosPagar":
-      case "variacaoEmprestimosPessoasLigadas":
         series[index] = aggregateBalanceteMonth(
           rows,
           mappings,
           (row) => absoluteBalance(row.saldoAtual) - absoluteBalance(row.saldoAnterior)
         );
         break;
-      case "resultadoLiquidoExercicio":
+      case "variacaoEmprestimosPessoasLigadas": {
+        const assetMappings = mappings.filter((mapping) => mapping.source_type === "asset");
+        const nonAssetMappings = mappings.filter((mapping) => mapping.source_type !== "asset");
+        const assetVariation = aggregateBalanceteMonth(
+          rows,
+          assetMappings,
+          (row) => absoluteBalance(row.saldoAnterior) - absoluteBalance(row.saldoAtual)
+        );
+        const nonAssetVariation = aggregateBalanceteMonth(
+          rows,
+          nonAssetMappings,
+          (row) => absoluteBalance(row.saldoAtual) - absoluteBalance(row.saldoAnterior)
+        );
+
+        series[index] = assetVariation + nonAssetVariation;
+        break;
+      }
+      case "resultadoLiquidoExercicio": {
+        const receitaMappings = mappings.filter(
+          (mapping) =>
+            mapping.account_code_snapshot === "03" || mapping.reduced_code_snapshot === "30000"
+        );
+        const despesaMappings = mappings.filter(
+          (mapping) =>
+            mapping.account_code_snapshot === "04" || mapping.reduced_code_snapshot === "40000"
+        );
+        const receitaFallback =
+          receitaMappings.length > 0
+            ? receitaMappings
+            : mappings.filter(
+                (mapping) =>
+                  mapping.account_code_snapshot.startsWith("03") ||
+                  mapping.reduced_code_snapshot?.startsWith("3")
+              );
+        const despesaFallback =
+          despesaMappings.length > 0
+            ? despesaMappings
+            : mappings.filter(
+                (mapping) =>
+                  mapping.account_code_snapshot.startsWith("04") ||
+                  mapping.reduced_code_snapshot?.startsWith("4")
+              );
+
+        const receitas = aggregateBalanceteMonth(
+          rows,
+          receitaFallback,
+          (row) => absoluteBalance(row.saldoAtual)
+        );
+        const custosDespesas = aggregateBalanceteMonth(
+          rows,
+          despesaFallback,
+          (row) => absoluteBalance(row.saldoAtual)
+        );
+
+        series[index] = receitas - custosDespesas;
+        break;
+      }
       case "resultadoVendaAtivoImobilizado":
       case "resultadoEquivalenciaPatrimonial":
       case "recebimentosLucrosDividendosSubsidiarias":
@@ -470,11 +454,6 @@ export function buildDfcStatement(input: {
   monthlyBalanceteRowsByMonth?: Array<DfcMonthlyBalanceteLike[] | undefined>;
   activeMonthIndex?: number;
 }): DfcStatementResult {
-  const currentPatrimonialLeaves = leafMovements(input.currentPatrimonialMovements);
-  const previousDecemberByCode = buildPreviousDecemberLookup(
-    leafMovements(input.previousYearPatrimonialMovements)
-  );
-
   const mappingsByLine = new Map<DfcLineKey, DfcMappingLike[]>();
   for (const mapping of input.mappings) {
     const lineKey = getCanonicalDfcLineKey(mapping.line_key) as DfcLineKey;
@@ -493,11 +472,9 @@ export function buildDfcStatement(input: {
 
   const hasMonthlyBalanceteBase =
     input.monthlyBalanceteRowsByMonth?.some((rows) => (rows?.length ?? 0) > 0) ?? false;
-  const previousPatrimonialMissing =
-    input.previousYearPatrimonialMovements.length === 0 && !hasMonthlyBalanceteBase;
   const warnings: string[] = [];
-  if (previousPatrimonialMissing) {
-    warnings.push("Base patrimonial de dezembro do ano anterior nao encontrada. O DFC foi marcado como parcial.");
+  if (!hasMonthlyBalanceteBase) {
+    warnings.push("Nenhum balancete mensal foi importado na aba Lista de balancete. O DFC permanece zerado.");
   }
 
   for (const config of DFC_LINE_CONFIG) {
@@ -510,26 +487,14 @@ export function buildDfcStatement(input: {
       continue;
     }
 
-    const sourceType = mappings[0]?.source_type as DfcSourceType | undefined;
-    const isDreSource = sourceType === "dre";
-
     const mappedFromBalancete =
       input.monthlyBalanceteRowsByMonth
         ? computeMappedBalanceteSeries(config.key, mappings, input.monthlyBalanceteRowsByMonth)
         : null;
 
-    lines[config.key] = mappedFromBalancete
-      ? mappedFromBalancete
-      : isDreSource
-        ? aggregateDreSeries(input.dreMovements, mappings)
-        : aggregateBalanceSeries(currentPatrimonialLeaves, previousDecemberByCode, mappings);
-  }
-
-  if (totalSeries(lines.resultadoLiquidoExercicio) === 0) {
-    lines.resultadoLiquidoExercicio = [...input.dre.lines.lucroLiquido];
-  }
-  if (totalSeries(lines.depreciacaoAmortizacao) === 0) {
-    lines.depreciacaoAmortizacao = input.dre.lines.depreciacaoAmortizacao.map((value) => Math.abs(value));
+    if (mappedFromBalancete) {
+      lines[config.key] = mappedFromBalancete;
+    }
   }
 
   lines.lucroAjustado = addSeries(
@@ -540,27 +505,8 @@ export function buildDfcStatement(input: {
     lines.recebimentosLucrosDividendosSubsidiarias
   );
 
-  lines.variacaoAtivo = addSeries(
-    lines.contasReceber,
-    lines.adiantamentos,
-    lines.impostosCompensar,
-    lines.estoques,
-    lines.despesasAntecipadas,
-    lines.outrasContasReceber
-  );
-
-  lines.variacaoPassivo = addSeries(
-    lines.fornecedores,
-    lines.obrigacoesTrabalhistas,
-    lines.obrigacoesTributarias,
-    lines.outrasObrigacoes,
-    lines.parcelamentos
-  );
-
   lines.resultadoOperacional = addSeries(
-    lines.lucroAjustado,
-    lines.variacaoAtivo,
-    lines.variacaoPassivo
+    ...RESULTADO_OPERACIONAL_SOURCE_KEYS.map((key) => lines[key])
   );
 
   lines.resultadoInvestimento = addSeries(
@@ -590,21 +536,6 @@ export function buildDfcStatement(input: {
   if (saldoFinalDisponivelFromBalancete && saldoInicialDisponivelFromBalancete) {
     lines.saldoFinalDisponivel = saldoFinalDisponivelFromBalancete;
     lines.saldoInicialDisponivel = saldoInicialDisponivelFromBalancete;
-  } else {
-    const saldoFinalDisponivel = buildEndingBalanceSeries(currentPatrimonialLeaves, disponibilidadeMappings);
-    const previousDecemberDisponivel = leafMovements(input.previousYearPatrimonialMovements)
-      .filter((movement) =>
-        disponibilidadeMappings.some((mapping) =>
-          matchesCode(movement.code, mapping.account_code_snapshot, mapping.include_children)
-        )
-      )
-      .reduce((total, movement) => total + (movement.values[11] ?? 0), 0);
-
-    lines.saldoFinalDisponivel = saldoFinalDisponivel;
-    lines.saldoInicialDisponivel = buildStartingBalanceSeries(
-      saldoFinalDisponivel,
-      previousDecemberDisponivel
-    );
   }
 
   lines.resultadoGeracaoCaixa =
@@ -612,11 +543,7 @@ export function buildDfcStatement(input: {
       ? lines.saldoFinalDisponivel.map(
           (value, index) => value - (lines.saldoInicialDisponivel[index] ?? 0)
         )
-      : addSeries(
-          lines.resultadoOperacional,
-          lines.resultadoInvestimento,
-          lines.resultadoFinanceiro
-        );
+      : createZeroSeries();
 
   const activeMonthIndex =
     typeof input.activeMonthIndex === "number" && input.activeMonthIndex >= 0
@@ -662,7 +589,7 @@ export function buildDfcStatement(input: {
     year: input.year,
     monthLabels: MONTH_LABELS,
     activeMonthIndex,
-    status: previousPatrimonialMissing ? "partial" : "ready",
+    status: hasMonthlyBalanceteBase ? "ready" : "partial",
     warnings,
     lines,
     rows,

@@ -60,6 +60,20 @@ type MetricItem = {
   format: "ratio" | "percent" | "currency" | "days";
 };
 
+const DFC_RESULTADO_OPERACIONAL_SOURCE_KEYS = [
+  "contasReceber",
+  "adiantamentos",
+  "impostosCompensar",
+  "estoques",
+  "despesasAntecipadas",
+  "outrasContasReceber",
+  "fornecedores",
+  "obrigacoesTrabalhistas",
+  "obrigacoesTributarias",
+  "outrasObrigacoes",
+  "parcelamentos",
+] as const;
+
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
@@ -73,6 +87,29 @@ function parseRequestedMonth(requestedMonth?: number) {
     return undefined;
   }
   return Math.min(requestedMonth, 11);
+}
+
+function isLikelyOutdatedDfcSummary(summary: DfcStatementResult) {
+  const hasRemovedRows = summary.rows.some(
+    (row) => String(row.key) === "variacaoAtivo" || String(row.key) === "variacaoPassivo"
+  );
+  if (hasRemovedRows) {
+    return true;
+  }
+
+  for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+    const expected = DFC_RESULTADO_OPERACIONAL_SOURCE_KEYS.reduce(
+      (total, key) => total + (summary.lines[key]?.[monthIndex] ?? 0),
+      0
+    );
+    const actual = summary.lines.resultadoOperacional?.[monthIndex] ?? 0;
+
+    if (Math.abs(actual - expected) > 0.005) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export async function getAccountingMappingVersion(accountingId: string): Promise<number> {
@@ -693,8 +730,11 @@ async function computeDfcPayload(params: {
       loadDfcBalanceteRowsByMonth(params.clientId, params.year),
     ]);
 
-  if (dreMovements.length === 0 && currentPatrimonialMovements.length === 0 && mappings.length === 0) {
-    return emptyDfcStatement(params.year, previousPatrimonialMovements.length === 0 ? "partial" : "ready");
+  const hasMonthlyBalanceteBase =
+    monthlyBalanceteRowsByMonth.some((rows) => (rows?.length ?? 0) > 0);
+
+  if (!hasMonthlyBalanceteBase && mappings.length === 0) {
+    return emptyDfcStatement(params.year, "partial");
   }
 
   return buildDfcStatement({
@@ -1013,6 +1053,7 @@ export async function getDfcSnapshotEnvelope(params: {
     ...params,
     statementType: "dfc",
     applyMonth: applyActiveMonthToDfc,
+    shouldRebuildSnapshot: isLikelyOutdatedDfcSummary,
     build: async () => {
       const summary = await computeDfcPayload({
         ...params,

@@ -81,10 +81,10 @@ function NavLink({
         variant === "sub"
           ? collapsed
             ? "justify-center px-0 py-2.5 text-xs"
-            : "px-3 py-2.5 text-xs"
+            : "px-3.5 py-3 text-xs"
           : collapsed
             ? "justify-center px-0 py-3 text-sm"
-            : "px-3 py-3 text-sm",
+            : "px-3.5 py-3.5 text-sm",
         active
           ? "bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20 shadow-[0_0_28px_rgba(14,165,233,0.14)]"
           : highlighted
@@ -250,7 +250,7 @@ export function StaffSidebar() {
           </button>
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-2">
           {mainItems.map((item) => (
             <NavLink
               key={item.href}

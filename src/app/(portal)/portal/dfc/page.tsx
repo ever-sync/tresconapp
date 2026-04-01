@@ -13,8 +13,6 @@ import {
 import {
   AlertTriangle,
   BarChart3,
-  ChevronDown,
-  ChevronRight,
   FileDown,
   FileUp,
   Landmark,
@@ -141,16 +139,6 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatMappedAccountLabel(account: {
-  code: string;
-  reducedCode: string | null;
-  name: string;
-}) {
-  return account.reducedCode
-    ? `${account.reducedCode} - ${account.name}`
-    : `${account.code} - ${account.name}`;
-}
-
 function toSeriesData(labels: string[], values: number[]) {
   return labels.map((label, index) => ({
     month: label,
@@ -230,6 +218,7 @@ function DfcPageContent() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [data, setData] = useState<DfcResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewMonthLabel, setPreviewMonthLabel] = useState<string | null>(null);
@@ -237,7 +226,6 @@ function DfcPageContent() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [deletingMonth, setDeletingMonth] = useState<number | null>(null);
-  const [expandedDerivedTargets, setExpandedDerivedTargets] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const availableYears = useMemo(() => {
@@ -303,11 +291,16 @@ function DfcPageContent() {
   }, []);
 
   const monthLabels = data?.monthLabels ?? MONTHS;
-  const listRows = data?.rows ?? EMPTY_ROWS;
+  const listRows = useMemo(
+    () =>
+      (data?.rows ?? EMPTY_ROWS).filter(
+        (row) => row.key !== "variacaoAtivo" && row.key !== "variacaoPassivo"
+      ),
+    [data?.rows]
+  );
   const balanceteUploads = data?.balanceteUploads ?? EMPTY_BALANCETE_UPLOADS;
   const cards = data?.cards ?? EMPTY_CARDS;
   const closedRows = data?.closedRows ?? EMPTY_CARDS;
-  const derivedTargetGroups = data?.derivedTargetGroups ?? {};
 
   const chartCards = useMemo(() => {
     return cards.map((card, index) => {
@@ -335,13 +328,6 @@ function DfcPageContent() {
       cards.find((card) => card.label === "Saldo Final Disponivel"),
     ].filter(Boolean) as Array<{ label: string; value: number }>;
   }, [cards]);
-
-  const toggleDerivedTarget = useCallback((label: string) => {
-    setExpandedDerivedTargets((current) => ({
-      ...current,
-      [label]: !current[label],
-    }));
-  }, []);
 
   async function handleOpenQuickPreview(item: DfcResponse["balanceteUploads"][number]) {
     setPreviewMonthLabel(item.label);
@@ -457,75 +443,27 @@ function DfcPageContent() {
   return (
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-cyan-400">
-              Balancetes mensais
+            <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">
+              DFC
             </p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-white">
-              Arquivo por mes e ano
-            </h1>
-            <p className="mt-1 text-sm text-slate-400">
-              Envie um CSV de balancete por mes. O saldo atual da planilha alimenta apenas o mes escolhido.
-            </p>
+            <h2 className="mt-1 text-xl font-bold text-white">Fluxo de Caixa Indireto</h2>
           </div>
 
-          <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[300px_150px_120px_auto]">
-            <div>
-              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Planilha
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="hidden"
-                onChange={(event) => {
-                  const nextFile = event.target.files?.[0] ?? null;
-                  setSelectedFile(nextFile);
-                  setUploadMessage(null);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-slate-300 transition hover:bg-white/10"
-              >
-                <span className="truncate">
-                  {selectedFile?.name ?? "Selecionar CSV de balancete"}
-                </span>
-                <FileUp className="h-4 w-4 text-slate-400" />
-              </button>
-            </div>
-
-            <div>
-              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Mes
-              </p>
-              <select
-                value={uploadMonth}
-                onChange={(event) => setUploadMonth(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
-              >
-                {MONTHS.map((item) => (
-                  <option key={item} value={item} className="bg-slate-900">
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+          <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
+            <div className="flex w-full flex-wrap items-center gap-3 xl:justify-end">
+              <div className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-black/20 px-3 py-2.5 sm:w-auto">
+              <span className="text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
                 Ano
-              </p>
+              </span>
               <select
                 value={year}
                 onChange={(event) => {
                   setYear(event.target.value);
                   setUploadMessage(null);
                 }}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+                className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 sm:min-w-[120px] sm:w-auto"
               >
                 {availableYears.map((item) => (
                   <option key={item} value={item} className="bg-slate-900">
@@ -537,92 +475,42 @@ function DfcPageContent() {
 
             <button
               type="button"
-              onClick={() => void handleUpload()}
-              disabled={uploading}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)]"
+              onClick={() => setImportModalOpen(true)}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] sm:w-auto"
             >
-              {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-              {uploading ? "Enviando..." : "Enviar CSV"}
+              <UploadCloud className="h-4 w-4" />
+              Importar
             </button>
-          </div>
-        </div>
+            </div>
 
-        <div className="mt-6 space-y-3">
-          {uploadProgress !== null && (
-            <div className="rounded-[1.5rem] border border-cyan-400/15 bg-cyan-500/8 px-5 py-4">
-              <div className="flex items-center justify-between gap-3 text-sm text-cyan-200">
-                <span>Progresso do upload</span>
-                <span>{uploadProgress}%</span>
-              </div>
-              <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/8">
-                <div
-                  className="h-full rounded-full bg-[linear-gradient(90deg,#19b6ff_0%,#0b63ff_100%)] transition-all"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+            <div className="scrollbar-hidden w-full overflow-x-auto">
+              <div className="inline-flex min-w-full rounded-2xl border border-white/6 bg-black/20 p-1 sm:min-w-0">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = view === tab.id;
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setView(tab.id)}
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 py-3 text-sm font-semibold transition-all sm:flex-none sm:px-4",
+                      active
+                        ? "bg-slate-800 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)]"
+                        : "text-slate-500 hover:text-slate-200"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                  </button>
+                );
+              })}
               </div>
             </div>
-          )}
-
-          {uploadMessage && (
-            <div className="rounded-[1.5rem] border border-emerald-400/15 bg-emerald-500/8 px-5 py-4 text-sm text-emerald-200">
-              {uploadMessage}
-            </div>
-          )}
-
-          <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-black/10 px-6 py-6 text-sm text-slate-400">
-            {selectedFile
-              ? `Arquivo selecionado para ${uploadMonth}/${year}: ${selectedFile.name}`
-              : "Selecione um CSV do balancete mensal ou uma planilha Excel e vincule ao mes desejado."}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">
-              DFC
-            </p>
-            <h2 className="mt-1 text-xl font-bold text-white">Fluxo de Caixa Indireto</h2>
-            {data && (
-              <p className="mt-1 text-sm text-slate-400">
-                {data.stale ? "Snapshot desatualizado" : "Snapshot pronto"} • versao {data.mappingVersion}
-              </p>
-            )}
-          </div>
-
-          <div className="flex rounded-2xl border border-white/6 bg-black/20 p-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = view === tab.id;
-
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setView(tab.id)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all",
-                    active
-                      ? "bg-slate-800 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)]"
-                      : "text-slate-500 hover:text-slate-200"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
-                </button>
-              );
-            })}
           </div>
 
         </div>
-
-        {loading && (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-            Carregando DFC...
-          </div>
-        )}
 
         {error && (
           <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
@@ -644,6 +532,165 @@ function DfcPageContent() {
           </div>
         ) : null}
       </section>
+
+      {importModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020817]/75 px-4 py-6 backdrop-blur-sm">
+          <div className="absolute inset-0" onClick={() => !uploading && setImportModalOpen(false)} />
+          <section className="relative z-10 w-full max-w-5xl rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.98),rgba(10,18,32,0.96))] p-5 shadow-[0_24px_120px_rgba(0,0,0,0.55)] sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.3em] text-cyan-400">
+                  Balancetes mensais
+                </p>
+                <h2 className="mt-2 text-3xl font-black tracking-tight text-white">
+                  Arquivo por mes e ano
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Envie um CSV de balancete por mes. O saldo atual da planilha alimenta apenas o mes escolhido.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(false)}
+                disabled={uploading}
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Fechar importacao"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_120px_auto]">
+              <div>
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                  Planilha
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="hidden"
+                  onChange={(event) => {
+                    const nextFile = event.target.files?.[0] ?? null;
+                    setSelectedFile(nextFile);
+                    setUploadMessage(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition",
+                    selectedFile
+                      ? "border-cyan-400/35 bg-cyan-500/12 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.06)] hover:bg-cyan-500/16"
+                      : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                  )}
+                >
+                  <span className="truncate">
+                    {selectedFile?.name ?? "Selecionar CSV de balancete"}
+                  </span>
+                  <FileUp className={cn("h-4 w-4", selectedFile ? "text-cyan-200" : "text-slate-400")} />
+                </button>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                  Mes
+                </p>
+                <select
+                  value={uploadMonth}
+                  onChange={(event) => setUploadMonth(event.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+                >
+                  {MONTHS.map((item) => (
+                    <option key={item} value={item} className="bg-slate-900">
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                  Ano
+                </p>
+                <select
+                  value={year}
+                  onChange={(event) => {
+                    setYear(event.target.value);
+                    setUploadMessage(null);
+                  }}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30"
+                >
+                  {availableYears.map((item) => (
+                    <option key={item} value={item} className="bg-slate-900">
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void handleUpload()}
+                  disabled={uploading}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {uploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                  {uploading ? "Enviando..." : "Enviar CSV"}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-3">
+              {uploadProgress !== null && (
+                <div className="rounded-[1.5rem] border border-cyan-400/15 bg-cyan-500/8 px-5 py-4">
+                  <div className="flex items-center justify-between gap-3 text-sm text-cyan-200">
+                    <span>Progresso do upload</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/8">
+                    <div
+                      className="h-full rounded-full bg-[linear-gradient(90deg,#19b6ff_0%,#0b63ff_100%)] transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {uploadMessage && (
+                <div className="rounded-[1.5rem] border border-emerald-400/15 bg-emerald-500/8 px-5 py-4 text-sm text-emerald-200">
+                  {uploadMessage}
+                </div>
+              )}
+
+              <div
+                className={cn(
+                  "rounded-[1.5rem] border border-dashed px-6 py-6 text-sm",
+                  selectedFile
+                    ? "border-cyan-400/20 bg-cyan-500/8 text-cyan-100"
+                    : "border-white/10 bg-black/10 text-slate-400"
+                )}
+              >
+                {selectedFile
+                  ? `Arquivo selecionado para ${uploadMonth}/${year}: ${selectedFile.name}`
+                  : "Selecione um CSV do balancete mensal ou uma planilha Excel e vincule ao mes desejado."}
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="pointer-events-none fixed bottom-5 right-5 z-40">
+          <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[rgba(15,23,42,0.92)] px-4 py-3 text-sm text-slate-200 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-md">
+            <LoaderCircle className="h-4 w-4 animate-spin text-slate-300" />
+            Carregando DFC...
+          </div>
+        </div>
+      ) : null}
 
       {view === "calculo" && (
         <section className="overflow-hidden rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.9))] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -701,65 +748,6 @@ function DfcPageContent() {
                       </div>
                     </div>
 
-                    {(row.label === "Variacao Ativo" || row.label === "Variacao Passivo") &&
-                    (derivedTargetGroups[row.label]?.length ?? 0) > 0 ? (
-                      <div className="border-t border-white/6 bg-[#0b1525]/85 px-6 py-5">
-                        <button
-                          type="button"
-                          onClick={() => toggleDerivedTarget(row.label)}
-                          className="flex w-full items-center justify-between gap-4 rounded-[1.1rem] border border-white/8 bg-[#0f1a2b] px-4 py-3 text-left transition hover:border-cyan-400/25 hover:bg-[#12203a]"
-                        >
-                          <div className="flex items-center gap-3">
-                            {expandedDerivedTargets[row.label] ? (
-                              <ChevronDown className="h-4 w-4 text-cyan-300" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-cyan-300" />
-                            )}
-                            <div>
-                              <div className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-cyan-300">
-                                Contas vinculadas
-                              </div>
-                              <div className="mt-1 text-sm text-slate-300">
-                                Clique para {expandedDerivedTargets[row.label] ? "fechar" : "abrir"} a visualizacao de {row.label.toLowerCase()}.
-                              </div>
-                            </div>
-                          </div>
-                          <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-cyan-200">
-                            {derivedTargetGroups[row.label]?.reduce((total, group) => total + group.total, 0) ?? 0} conta(s)
-                          </span>
-                        </button>
-
-                        {expandedDerivedTargets[row.label] ? (
-                          <div className="mt-4 grid gap-4">
-                            {derivedTargetGroups[row.label]?.map((group) => (
-                              <div
-                                key={`${row.key}-${group.title}`}
-                                className="rounded-[1.1rem] border border-white/8 bg-[#0f1a2b] px-4 py-4"
-                              >
-                                <div className="mb-3 flex items-center justify-between gap-3">
-                                  <div className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-cyan-300">
-                                    {group.title}
-                                  </div>
-                                  <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-cyan-200">
-                                    {group.total} conta(s)
-                                  </span>
-                                </div>
-                                <div className="space-y-2">
-                                  {group.accounts.map((account) => (
-                                    <div
-                                      key={`${group.title}-${account.code}-${account.name}`}
-                                      className="rounded-2xl border border-white/8 bg-[#101d31] px-4 py-3 text-sm text-slate-100"
-                                    >
-                                      {formatMappedAccountLabel(account)}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
                   </div>
                 ))}
               </div>

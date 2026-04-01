@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   FileText,
+  FolderOpen,
   Landmark,
   LayoutDashboard,
   LifeBuoy,
@@ -17,7 +18,8 @@ const items = [
   { href: "/portal/dre", label: "DRE", icon: BarChart3 },
   { href: "/portal/dfc", label: "DFC", icon: FileText },
   { href: "/portal/balanco-patrimonial", label: "Balanco", icon: Landmark },
-  { href: "/portal/atendimento", label: "Suporte", icon: LifeBuoy },
+  { href: "/portal/documentos", label: "Docs", icon: FolderOpen },
+  { href: "/portal/atendimento", label: "Atend.", icon: LifeBuoy },
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -33,7 +35,7 @@ export function PortalMobileNav() {
       style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
       <nav className="mx-auto max-w-xl rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(7,17,33,0.96),rgba(7,16,28,0.94))] px-2 py-2 shadow-[0_-18px_40px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <div className="grid grid-cols-5 gap-1">
+      <div className="scrollbar-hidden flex items-stretch gap-1 overflow-x-auto">
         {items.map((item) => {
           const active = isActivePath(pathname, item.href);
           const Icon = item.icon;
@@ -43,7 +45,7 @@ export function PortalMobileNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 rounded-[1.35rem] px-2 py-2.5 text-[0.68rem] font-bold transition",
+                "flex min-w-[4.7rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[1.35rem] px-2 py-2.5 text-[0.68rem] font-bold transition",
                 active
                   ? "bg-[linear-gradient(180deg,rgba(20,60,120,0.92),rgba(8,38,62,0.96))] text-cyan-100 shadow-[0_12px_30px_rgba(8,38,62,0.35)]"
                   : "text-slate-400 hover:bg-white/5 hover:text-slate-100"
@@ -57,7 +59,7 @@ export function PortalMobileNav() {
               >
                 <Icon className="h-5 w-5" />
               </div>
-              <span>{item.label}</span>
+              <span className="whitespace-nowrap">{item.label}</span>
             </Link>
           );
         })}
