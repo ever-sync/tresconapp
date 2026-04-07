@@ -61,6 +61,7 @@ type MetricItem = {
 };
 
 const DFC_RESULTADO_OPERACIONAL_SOURCE_KEYS = [
+  "lucroAjustado",
   "contasReceber",
   "adiantamentos",
   "impostosCompensar",

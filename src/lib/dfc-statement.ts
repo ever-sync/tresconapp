@@ -172,6 +172,7 @@ const CONFIGURABLE_LINE_KEYS = new Set<DfcLineKey>([
 ]);
 
 const RESULTADO_OPERACIONAL_SOURCE_KEYS: DfcLineKey[] = [
+  "lucroAjustado",
   "contasReceber",
   "adiantamentos",
   "impostosCompensar",
