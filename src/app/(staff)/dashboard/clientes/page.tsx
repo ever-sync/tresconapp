@@ -16,6 +16,7 @@ import {
   FileText,
   Globe2,
   LayoutGrid,
+  List,
   LoaderCircle,
   Mail,
   MapPin,
@@ -228,6 +229,119 @@ function ClientCardView({
   );
 }
 
+function ClientListRow({
+  client,
+  onToggle,
+  onEdit,
+  onDelete,
+  deleting,
+}: {
+  client: ClientRecord;
+  onToggle: (client: ClientRecord) => void;
+  onEdit: (client: ClientRecord) => void;
+  onDelete: (client: ClientRecord) => void;
+  deleting: boolean;
+}) {
+  return (
+    <div className="grid gap-4 px-5 py-5 xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.35fr)_auto_auto] xl:items-center">
+      <div className="flex min-w-0 items-center gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-300">
+          <Building2 className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-extrabold uppercase tracking-tight text-white">
+            {client.name}
+          </h3>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-400 xl:hidden">
+            <span className="inline-flex items-center gap-2">
+              {client.industry || "Sem segmento"}
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-slate-500" />
+              CNPJ: {formatCnpj(client.cnpj)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden text-sm text-slate-300 xl:block">
+        {client.industry || "Sem segmento"}
+      </div>
+
+      <div className="hidden items-center gap-2 text-sm text-slate-300 xl:flex">
+        <ShieldCheck className="h-4 w-4 text-slate-500" />
+        <span>{formatCnpj(client.cnpj)}</span>
+      </div>
+
+      <div className="flex items-center gap-3 xl:justify-self-start">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full border px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-[0.18em]",
+            client.active
+              ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+              : "border-slate-300/20 bg-slate-200/10 text-slate-300"
+          )}
+        >
+          {client.active ? "Ativo" : "Desativado"}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => onToggle(client)}
+          className="shrink-0 text-cyan-300 transition hover:text-cyan-200"
+          aria-label={client.active ? "Desativar cliente" : "Ativar cliente"}
+        >
+          {client.active ? (
+            <ToggleRight className="h-8 w-8" />
+          ) : (
+            <ToggleLeft className="h-8 w-8" />
+          )}
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2 xl:justify-self-end">
+        <Link
+          href={`/api/auth/staff-client-access?clientId=${encodeURIComponent(client.id)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-500/10 text-cyan-300 transition hover:bg-cyan-500/15"
+          aria-label={`Acessar cliente ${client.name}`}
+          title="Acessar cliente"
+        >
+          <Globe2 className="h-4 w-4" />
+        </Link>
+
+        <button
+          type="button"
+          onClick={() => onEdit(client)}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10"
+          aria-label={`Editar cliente ${client.name}`}
+          title="Editar cliente"
+        >
+          <Edit3 className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onDelete(client)}
+          disabled={deleting}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-400/20 bg-rose-500/10 text-rose-300 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={`Excluir cliente ${client.name}`}
+          title="Excluir cliente"
+        >
+          {deleting ? (
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Field({
   label,
   icon: Icon,
@@ -257,6 +371,7 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
   const [form, setForm] = useState<ModalForm>(blankForm);
@@ -557,16 +672,42 @@ export default function ClientesPage() {
               />
             </div>
 
-            <button
-              type="button"
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-xl transition",
+                  viewMode === "list"
+                    ? "bg-cyan-500/15 text-cyan-300"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                )}
+                aria-label="Exibir em lista"
+                aria-pressed={viewMode === "list"}
+              >
+                <List className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-xl transition",
+                  viewMode === "grid"
+                    ? "bg-cyan-500/15 text-cyan-300"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                )}
+                aria-label="Exibir em grade"
+                aria-pressed={viewMode === "grid"}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
 
             <button
               type="button"
               className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+              aria-label="Configuracoes da lista"
             >
               <Settings2 className="h-4 w-4" />
             </button>
@@ -587,6 +728,46 @@ export default function ClientesPage() {
         {loading ? (
           <div className="rounded-[1.6rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-8 text-center text-sm text-slate-400">
             Carregando clientes...
+          </div>
+        ) : filteredClients.length === 0 ? (
+          <div className="rounded-[1.6rem] border border-dashed border-white/10 bg-[linear-gradient(180deg,rgba(12,22,40,0.9),rgba(10,18,32,0.84))] p-8 text-center">
+            <p className="text-sm font-semibold text-slate-300">Nenhum cliente encontrado.</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Ajuste a busca ou cadastre um novo cliente para continuar.
+            </p>
+          </div>
+        ) : viewMode === "list" ? (
+          <div className="overflow-hidden rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.97),rgba(10,18,32,0.93))] shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+            <div className="hidden border-b border-white/6 px-5 py-3 xl:grid xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1.35fr)_auto_auto] xl:items-center">
+              <div className="text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                Cliente
+              </div>
+              <div className="text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                Segmento
+              </div>
+              <div className="text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                CNPJ
+              </div>
+              <div className="text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                Status
+              </div>
+              <div className="text-right text-[0.68rem] font-black uppercase tracking-[0.24em] text-slate-500">
+                Acoes
+              </div>
+            </div>
+
+            <div className="divide-y divide-white/6">
+              {filteredClients.map((client) => (
+                <ClientListRow
+                  key={client.id}
+                  client={client}
+                  onToggle={toggleClient}
+                  onEdit={openEditModal}
+                  onDelete={deleteClient}
+                  deleting={deletingClientId === client.id}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-3">

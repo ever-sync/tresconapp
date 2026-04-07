@@ -71,4 +71,10 @@
   .scrollbar-hidden::-webkit-scrollbar {
     display: none;
   }
+
+  .parametrization-borderless,
+  .parametrization-borderless * {
+    border-style: none !important;
+    border-width: 0 !important;
+  }
 }

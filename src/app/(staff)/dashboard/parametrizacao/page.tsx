@@ -90,7 +90,6 @@ type ParametrizationCacheSnapshot = {
   dfcLineMappings: DfcLineMappingRow[];
 };
 
-const MONTH_YEAR = new Date().getFullYear();
 const UNMAPPED_PREVIEW_LIMIT = 120;
 
 const DRE_GROUPS: Array<[string, string[]]> = [
@@ -635,26 +634,12 @@ export default async function ParametrizacaoPage({ searchParams }: Parametrizaca
   }
 
   return (
-    <div className="min-h-full bg-[linear-gradient(180deg,#08111f_0%,#091527_45%,#07101c_100%)] px-4 py-6 text-slate-50 sm:px-6 lg:px-8">
+    <div className="parametrization-borderless min-h-full bg-[linear-gradient(180deg,#08111f_0%,#091527_45%,#07101c_100%)] px-4 py-6 text-slate-50 sm:px-6 lg:px-8">
       <section className="rounded-[2rem] border border-white/8 bg-[linear-gradient(180deg,rgba(13,24,42,0.96),rgba(8,18,32,0.92))] shadow-[0_24px_90px_rgba(0,0,0,0.3)]">
-        <div className="flex flex-col gap-5 border-b border-white/6 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.35em] text-cyan-300/70">
-              Parametrizacao
-            </p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-white">
-              Parametrizacao dos Demonstrativos
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-400">
-              O que for salvo aqui vale para toda a contabilidade.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 self-start rounded-2xl border border-white/8 bg-white/4 px-4 py-3">
-            <span className="text-sm font-semibold text-slate-300">Ano</span>
-            <span className="text-sm font-black text-cyan-300">{MONTH_YEAR}</span>
-            <ChevronRight className="h-4 w-4 rotate-90 text-slate-500" />
-          </div>
+        <div className="px-5 py-5">
+          <h1 className="text-3xl font-black tracking-tight text-white">
+            Parametrizacao dos Demonstrativos
+          </h1>
         </div>
 
         <div className="space-y-5 p-5">
