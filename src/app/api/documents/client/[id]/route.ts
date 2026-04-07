@@ -13,6 +13,13 @@ function parsePositiveInt(value: string | null, fallback: number) {
   return parsed;
 }
 
+function parseOrigin(value: string | null): "all" | "attachment" | "support_ticket" {
+  if (value === "attachment" || value === "support_ticket") {
+    return value;
+  }
+  return "all";
+}
+
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
@@ -34,6 +41,7 @@ export async function GET(
     const page = parsePositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), 50), 100);
     const query = searchParams.get("query")?.trim() ?? "";
+    const origin = parseOrigin(searchParams.get("origin"));
 
     const client = await prisma.client.findFirst({
       where: {
@@ -53,10 +61,22 @@ export async function GET(
       return error("Cliente nao encontrado", 404);
     }
 
+    const documentTypeFilter =
+      origin === "support_ticket"
+        ? { equals: "support_ticket" }
+        : origin === "attachment"
+          ? { notIn: ["dfc_balancete_import", "support_ticket"] }
+          : { not: "dfc_balancete_import" };
+
+    const visibleDocumentFilter = {
+      deleted_at: null,
+      document_type: documentTypeFilter,
+    };
+
     const where = {
       accounting_id: auth.accountingId,
       client_id: id,
-      deleted_at: null,
+      ...visibleDocumentFilter,
       ...(query
         ? {
             OR: [
@@ -74,7 +94,7 @@ export async function GET(
         where: {
           accounting_id: auth.accountingId,
           client_id: id,
-          deleted_at: null,
+          ...visibleDocumentFilter,
           viewed_at: null,
         },
       }),
@@ -99,6 +119,7 @@ export async function GET(
         id: document.id,
         title: document.display_name,
         category: document.category,
+        documentType: document.document_type,
         description:
           document.description ?? document.original_name ?? document.display_name,
         sentAt: document.created_at.toISOString(),

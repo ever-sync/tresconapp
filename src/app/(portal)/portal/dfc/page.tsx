@@ -451,65 +451,64 @@ function DfcPageContent() {
             <h2 className="mt-1 text-xl font-bold text-white">Fluxo de Caixa Indireto</h2>
           </div>
 
-          <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
-            <div className="flex w-full flex-wrap items-center gap-3 xl:justify-end">
-              <div className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-black/20 px-3 py-2.5 sm:w-auto">
-              <span className="text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-                Ano
-              </span>
-              <select
-                value={year}
-                onChange={(event) => {
-                  setYear(event.target.value);
-                  setUploadMessage(null);
-                }}
-                className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 sm:min-w-[120px] sm:w-auto"
-              >
-                {availableYears.map((item) => (
-                  <option key={item} value={item} className="bg-slate-900">
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setImportModalOpen(true)}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] sm:w-auto"
-            >
-              <UploadCloud className="h-4 w-4" />
-              Importar
-            </button>
-            </div>
-
+          <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row xl:items-center xl:gap-4">
             <div className="scrollbar-hidden w-full overflow-x-auto">
               <div className="inline-flex min-w-full rounded-2xl border border-white/6 bg-black/20 p-1 sm:min-w-0">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                const active = view === tab.id;
+                {tabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = view === tab.id;
 
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setView(tab.id)}
-                    className={cn(
-                      "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 py-3 text-sm font-semibold transition-all sm:flex-none sm:px-4",
-                      active
-                        ? "bg-slate-800 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)]"
-                        : "text-slate-500 hover:text-slate-200"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {tab.label}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setView(tab.id)}
+                      className={cn(
+                        "flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3 py-3 text-sm font-semibold transition-all sm:flex-none sm:px-4",
+                        active
+                          ? "bg-slate-800 text-white shadow-[0_10px_24px_rgba(0,0,0,0.28)]"
+                          : "text-slate-500 hover:text-slate-200"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
 
+            <div className="flex w-full flex-wrap items-center gap-3 xl:w-auto xl:flex-nowrap">
+              <div className="flex w-full items-center gap-3 rounded-2xl border border-white/6 bg-black/20 px-3 py-2.5 sm:w-auto">
+                <span className="text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                  Ano
+                </span>
+                <select
+                  value={year}
+                  onChange={(event) => {
+                    setYear(event.target.value);
+                    setUploadMessage(null);
+                  }}
+                  className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 sm:min-w-[120px] sm:w-auto"
+                >
+                  {availableYears.map((item) => (
+                    <option key={item} value={item} className="bg-slate-900">
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(true)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(145deg,#19b6ff_0%,#0c8bff_55%,#0b63ff_100%)] px-5 py-3 text-sm font-bold text-white shadow-[0_18px_48px_rgba(25,182,255,0.3)] sm:w-auto"
+              >
+                <UploadCloud className="h-4 w-4" />
+                Importar
+              </button>
+            </div>
+          </div>
         </div>
 
         {error && (

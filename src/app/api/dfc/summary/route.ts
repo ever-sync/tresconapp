@@ -19,6 +19,8 @@ import {
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
 
+const SUMMARY_CACHE_CONTROL = "private, max-age=15, stale-while-revalidate=120";
+
 function parseYear(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
@@ -205,7 +207,7 @@ export async function GET(request: NextRequest) {
       previewDocumentIdByMonth.set(document.period_month - 1, document.id);
     }
 
-    return success({
+    const response = success({
       ...envelope.payload,
       balanceteUploads: MONTH_LABELS.map((label, monthIndex) => {
         const upload = latestImportByMonth.get(monthIndex);
@@ -232,6 +234,8 @@ export async function GET(request: NextRequest) {
       computedAt: envelope.computedAt,
       derivedTargetGroups,
     });
+    response.headers.set("Cache-Control", SUMMARY_CACHE_CONTROL);
+    return response;
   } catch (err) {
     return handleError(err);
   }

@@ -435,7 +435,7 @@ function DrePageContent() {
             </p>
           </div>
 
-          <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
+          <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center lg:gap-4">
             <div className="scrollbar-hidden w-full overflow-x-auto lg:w-auto lg:overflow-visible">
               <div className="inline-flex min-w-full rounded-2xl border border-white/6 bg-black/20 p-1 lg:min-w-0">
                 {tabs.map((tab) => {
@@ -462,9 +462,9 @@ function DrePageContent() {
               </div>
             </div>
 
-            <div className="grid w-full grid-cols-2 gap-3 lg:flex lg:w-auto lg:flex-wrap lg:items-end lg:justify-end">
-              <div className="col-span-1">
-                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+            <div className="grid w-full grid-cols-2 gap-3 lg:flex lg:w-auto lg:items-center lg:gap-2">
+              <div className="col-span-1 lg:flex lg:items-center lg:gap-2">
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500 lg:mb-0">
                   Ano
                 </p>
                 <select
@@ -483,8 +483,8 @@ function DrePageContent() {
                 </select>
               </div>
 
-              <div className="col-span-1">
-                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+              <div className="col-span-1 lg:flex lg:items-center lg:gap-2">
+                <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500 lg:mb-0">
                   Modo
                 </p>
                 <select

@@ -13,6 +13,13 @@ function parsePositiveInt(value: string | null, fallback: number) {
   return parsed;
 }
 
+function parseOrigin(value: string | null): "all" | "attachment" | "support_ticket" {
+  if (value === "attachment" || value === "support_ticket") {
+    return value;
+  }
+  return "all";
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireStaff();
@@ -20,10 +27,26 @@ export async function GET(request: NextRequest) {
     const page = parsePositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), 50), 100);
     const query = searchParams.get("query")?.trim() ?? "";
+    const origin = parseOrigin(searchParams.get("origin"));
+
+    const documentTypeFilter =
+      origin === "support_ticket"
+        ? { equals: "support_ticket" }
+        : origin === "attachment"
+          ? { notIn: ["dfc_balancete_import", "support_ticket"] }
+          : { not: "dfc_balancete_import" };
+
+    const visibleDocumentFilter = {
+      deleted_at: null,
+      document_type: documentTypeFilter,
+    };
 
     const where = {
       accounting_id: auth.accountingId,
       deleted_at: null,
+      documents: {
+        some: visibleDocumentFilter,
+      },
       ...(query
         ? {
             OR: [
@@ -33,7 +56,7 @@ export async function GET(request: NextRequest) {
               {
                 documents: {
                   some: {
-                    deleted_at: null,
+                    ...visibleDocumentFilter,
                     OR: [
                       { display_name: { contains: query, mode: "insensitive" as const } },
                       { category: { contains: query, mode: "insensitive" as const } },
@@ -65,7 +88,7 @@ export async function GET(request: NextRequest) {
         by: ["client_id"],
         where: {
           accounting_id: auth.accountingId,
-          deleted_at: null,
+          ...visibleDocumentFilter,
           viewed_at: null,
         },
         _count: {
@@ -76,7 +99,7 @@ export async function GET(request: NextRequest) {
         by: ["client_id"],
         where: {
           accounting_id: auth.accountingId,
-          deleted_at: null,
+          ...visibleDocumentFilter,
         },
         _count: {
           _all: true,
@@ -85,13 +108,14 @@ export async function GET(request: NextRequest) {
       prisma.clientDocument.findMany({
         where: {
           accounting_id: auth.accountingId,
-          deleted_at: null,
+          ...visibleDocumentFilter,
         },
         orderBy: { created_at: "desc" },
         select: {
           client_id: true,
           display_name: true,
           created_at: true,
+          document_type: true,
         },
       }),
     ]);
@@ -105,6 +129,7 @@ export async function GET(request: NextRequest) {
       {
         title: string;
         sentAt: string;
+        documentType: string;
       }
     >();
 
@@ -113,6 +138,7 @@ export async function GET(request: NextRequest) {
         latestDocumentMap.set(document.client_id, {
           title: document.display_name,
           sentAt: document.created_at.toISOString(),
+          documentType: document.document_type,
         });
       }
     }

@@ -17,7 +17,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowRight, CalendarDays, Filter, FileDown, UploadCloud } from "lucide-react";
+import { Filter, FileDown, UploadCloud } from "lucide-react";
 
 import { useClientAuthStore } from "@/stores/useClientAuthStore";
 import { usePortalClient } from "@/components/portal-client-provider";
@@ -61,13 +61,6 @@ const reports = [
   { title: "DRE Consolidado", period: "NOVEMBRO 2025" },
   { title: "Demonstrativo de Fluxo", period: "OUTUBRO 2025" },
   { title: "Relatório de Impostos", period: "SETEMBRO 2025" },
-];
-
-const quickActions = [
-  { label: "DRE", href: "/portal/dre", hint: "Resultados" },
-  { label: "DFC", href: "/portal/dfc", hint: "Fluxo" },
-  { label: "Docs", href: "/portal/documentos", hint: "Arquivos" },
-  { label: "Atendimento", href: "/portal/atendimento", hint: "Suporte" },
 ];
 
 function money(value: number) {
@@ -251,86 +244,21 @@ export default function PortalPage() {
           </div>
 
           <div className="w-full lg:w-auto">
-            <p className="mb-2 text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
-              Ano
-            </p>
-            <select
-              value={selectedYear}
-              onChange={(event) => setSelectedYear(event.target.value)}
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 lg:min-w-[9rem]"
-            >
-              {availableYears.map((item) => (
-                <option key={item} value={item} className="bg-slate-900">
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="order-2 rounded-[1.8rem] border border-white/8 bg-[linear-gradient(180deg,rgba(12,22,40,0.96),rgba(10,18,32,0.92))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-5 xl:order-1 xl:rounded-[2rem]">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#1ea7ff_0%,#0f86ff_50%,#0a6bff_100%)] text-xl font-bold text-white shadow-[0_0_28px_rgba(14,165,233,0.45)] sm:h-16 sm:w-16 sm:text-2xl">
-                {client?.name ? client.name.slice(0, 2).toUpperCase() : "CO"}
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                  {client?.name ?? "Cliente não identificado"}
-                </h1>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">
-                    Cliente Premium
-                  </span>
-                  <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    ID: {client?.id ? `#${client.id.slice(0, 8).toUpperCase()}` : "#TC-000-000"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
-              <span className="h-2.5 w-2.5 rounded-full bg-cyan-900" />
-              <span className="h-2.5 w-2.5 rounded-full bg-cyan-900" />
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3 xl:hidden">
-            {quickActions.map((action) => (
-              <Link
-                key={action.href}
-                href={action.href}
-                className="rounded-[1.35rem] border border-white/8 bg-white/[0.03] px-4 py-3 transition hover:bg-white/[0.06]"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-white">{action.label}</p>
-                    <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-[0.22em] text-slate-500">
-                      {action.hint}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-cyan-300" />
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="order-1 rounded-[1.8rem] border border-cyan-400/20 bg-[linear-gradient(180deg,rgba(11,145,239,0.96),rgba(23,93,253,0.95))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.24)] sm:p-5 xl:order-2 xl:rounded-[2rem]">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-5xl font-black tracking-tight text-white">27</p>
-              <p className="mt-3 text-xs font-bold uppercase tracking-[0.22em] text-cyan-100/80">
-                Sábado
+            <div className="flex items-center gap-3">
+              <p className="text-[0.7rem] font-black uppercase tracking-[0.3em] text-slate-500">
+                Ano
               </p>
-              <p className="mt-1 text-lg font-bold text-white">Reunião Mensal</p>
-              <p className="mt-1 text-sm text-cyan-100/80">10:25 am - 30 mins</p>
-            </div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white">
-              <CalendarDays className="h-5 w-5" />
+              <select
+                value={selectedYear}
+                onChange={(event) => setSelectedYear(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-cyan-400/30 lg:min-w-[9rem]"
+              >
+                {availableYears.map((item) => (
+                  <option key={item} value={item} className="bg-slate-900">
+                    {item}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

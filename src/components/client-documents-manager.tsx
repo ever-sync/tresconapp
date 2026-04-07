@@ -33,6 +33,19 @@ type Counters = {
   viewed: number;
 };
 
+const ACCOUNTING_CATEGORY_OPTIONS = [
+  "Fiscal",
+  "Contabil",
+  "Financeiro",
+  "Pessoal / RH",
+  "Bancario",
+  "Contratos",
+  "Societario",
+  "Juridico",
+  "Impostos / Guias",
+  "Outros",
+] as const;
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
     day: "2-digit",
@@ -79,7 +92,10 @@ export function ClientDocumentsManager() {
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [category, setCategory] = useState("Geral");
+  const [category, setCategory] = useState<(typeof ACCOUNTING_CATEGORY_OPTIONS)[number]>(
+    "Fiscal"
+  );
+  const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -169,7 +185,9 @@ export function ClientDocumentsManager() {
     try {
       const formData = new FormData();
       formData.set("file", file);
-      formData.set("category", category);
+      const resolvedCategory =
+        category === "Outros" ? customCategory.trim() || "Outros" : category;
+      formData.set("category", resolvedCategory);
       formData.set("description", description.trim() || file.name);
 
       const payload = await uploadFormDataWithProgress<{ document?: ClientDocument }>(
@@ -180,7 +198,8 @@ export function ClientDocumentsManager() {
 
       setFile(null);
       setDescription("");
-      setCategory("Geral");
+      setCategory("Fiscal");
+      setCustomCategory("");
       setPage(1);
       if (payload.document) {
         setDocuments((current) => [payload.document as ClientDocument, ...current].slice(0, 50));
@@ -250,12 +269,19 @@ export function ClientDocumentsManager() {
                 <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
                   Categoria
                 </label>
-                <input
+                <select
                   value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                  placeholder="Ex: Fiscal"
+                  onChange={(event) =>
+                    setCategory(event.target.value as (typeof ACCOUNTING_CATEGORY_OPTIONS)[number])
+                  }
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                />
+                >
+                  {ACCOUNTING_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option} value={option} className="bg-slate-900 text-slate-100">
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -269,6 +295,20 @@ export function ClientDocumentsManager() {
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
                 />
               </div>
+
+              {category === "Outros" && (
+                <div className="sm:col-span-2">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
+                    Especificar categoria
+                  </label>
+                  <input
+                    value={customCategory}
+                    onChange={(event) => setCustomCategory(event.target.value)}
+                    placeholder="Ex: Documentos societarios extraordinarios"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                </div>
+              )}
             </div>
 
             <button

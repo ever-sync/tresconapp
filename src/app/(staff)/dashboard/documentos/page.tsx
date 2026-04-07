@@ -21,6 +21,7 @@ type ClientDocument = {
   id: string;
   title: string;
   category: string;
+  documentType: string;
   description: string;
   sentAt: string;
   size: string;
@@ -38,6 +39,7 @@ type ClientInbox = {
   latestDocument: {
     title: string;
     sentAt: string;
+    documentType: string;
   } | null;
 };
 
@@ -47,6 +49,17 @@ type Pagination = {
   total: number;
   totalPages: number;
 };
+
+type DocumentOriginFilter = "all" | "attachment" | "support_ticket";
+
+const DOCUMENT_ORIGIN_OPTIONS: Array<{
+  value: DocumentOriginFilter;
+  label: string;
+}> = [
+  { value: "all", label: "Todos" },
+  { value: "attachment", label: "Anexos" },
+  { value: "support_ticket", label: "Chamados" },
+];
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -76,6 +89,17 @@ function toneForCategory(category: string) {
   return "bg-slate-500/10 text-slate-300 ring-white/10";
 }
 
+function labelForDocumentType(documentType: string) {
+  return documentType === "support_ticket" ? "Chamado" : "Anexo";
+}
+
+function toneForDocumentType(documentType: string) {
+  if (documentType === "support_ticket") {
+    return "bg-amber-500/10 text-amber-300 ring-amber-400/20";
+  }
+  return "bg-cyan-500/10 text-cyan-300 ring-cyan-400/20";
+}
+
 function isPreviewableMimeType(mimeType: string) {
   return (
     mimeType.startsWith("image/") ||
@@ -88,6 +112,7 @@ export default function DocumentosPage() {
   const [clients, setClients] = useState<ClientInbox[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [originFilter, setOriginFilter] = useState<DocumentOriginFilter>("all");
   const deferredQuery = useDeferredValue(query);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<Pagination>({
@@ -122,6 +147,9 @@ export default function DocumentosPage() {
         if (deferredQuery.trim()) {
           params.set("query", deferredQuery.trim());
         }
+        if (originFilter !== "all") {
+          params.set("origin", originFilter);
+        }
 
         const response = await fetch(`/api/documents/clients?${params.toString()}`, { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to load documents");
@@ -153,7 +181,7 @@ export default function DocumentosPage() {
     return () => {
       active = false;
     };
-  }, [deferredQuery, page]);
+  }, [deferredQuery, originFilter, page]);
 
   const selectedClient = useMemo(
     () => clients.find((client) => client.id === selectedClientId) ?? null,
@@ -180,6 +208,9 @@ export default function DocumentosPage() {
         });
         if (deferredQuery.trim()) {
           params.set("query", deferredQuery.trim());
+        }
+        if (originFilter !== "all") {
+          params.set("origin", originFilter);
         }
 
         const response = await fetch(
@@ -246,7 +277,7 @@ export default function DocumentosPage() {
     return () => {
       active = false;
     };
-  }, [deferredQuery, documentsPage, selectedClientId]);
+  }, [deferredQuery, documentsPage, originFilter, selectedClientId]);
 
   const selectedDocument = useMemo(() => {
     if (!selectedDocumentId) return null;
@@ -273,11 +304,11 @@ export default function DocumentosPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [deferredQuery]);
+  }, [deferredQuery, originFilter]);
 
   useEffect(() => {
     setDocumentsPage(1);
-  }, [deferredQuery, selectedClientId]);
+  }, [deferredQuery, originFilter, selectedClientId]);
 
   function openClient(clientId: string) {
     setSelectedClientId(clientId);
@@ -360,7 +391,7 @@ export default function DocumentosPage() {
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-400">
               Cada cliente pode enviar documentos com categoria, descriçao e data de envio.
-              Ao abrir o arquivo, a marca de não visto some do card.
+              Aqui aparecem anexos do portal e arquivos ligados a chamados.
             </p>
           </div>
 
@@ -372,6 +403,29 @@ export default function DocumentosPage() {
               placeholder="Buscar arquivo, categoria ou cliente..."
               className="w-full bg-transparent text-sm outline-none placeholder:text-slate-500"
             />
+          </div>
+        </div>
+
+        <div className="border-b border-white/6 px-5 pb-5">
+          <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+            {DOCUMENT_ORIGIN_OPTIONS.map((option) => {
+              const isActive = originFilter === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setOriginFilter(option.value)}
+                  className={cn(
+                    "rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-[0.24em] transition",
+                    isActive
+                      ? "bg-cyan-500/15 text-cyan-200 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]"
+                      : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -453,9 +507,19 @@ export default function DocumentosPage() {
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
                           Ultimo envio
                         </p>
-                        <p className="mt-1 truncate font-medium text-slate-200">
+                        <div className="mt-1 flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "inline-flex rounded-full px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.24em] ring-1",
+                              toneForDocumentType(latestDocument?.documentType ?? "general")
+                            )}
+                          >
+                            {labelForDocumentType(latestDocument?.documentType ?? "general")}
+                          </span>
+                          <p className="truncate font-medium text-slate-200">
                           {latestDocument?.title ?? "Nenhum documento"}
-                        </p>
+                          </p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 text-cyan-300">
                         <span className="text-xs font-semibold uppercase">Abrir</span>
@@ -567,6 +631,14 @@ export default function DocumentosPage() {
                               )}
                             >
                               {document.category}
+                            </span>
+                            <span
+                              className={cn(
+                                "inline-flex rounded-full px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.24em] ring-1",
+                                toneForDocumentType(document.documentType)
+                              )}
+                            >
+                              {labelForDocumentType(document.documentType)}
                             </span>
                             {isUnread && (
                               <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/25 bg-rose-500/10 px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-[0.25em] text-rose-300">

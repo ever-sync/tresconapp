@@ -9,6 +9,7 @@ import { NotificationPopover } from "@/components/notification-popover";
 const STAFF_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/dashboard/clientes": "Clientes",
+  "/dashboard/relatorios": "Relatórios",
   "/dashboard/documentos": "Documentos",
   "/dashboard/plano-de-contas": "Plano de Contas",
   "/dashboard/parametrizacao": "Parametrizacao",

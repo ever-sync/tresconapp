@@ -8,6 +8,8 @@ import { getDreSnapshotEnvelope } from "@/lib/statement-snapshots";
 export const runtime = "nodejs";
 export const preferredRegion = "iad1";
 
+const SUMMARY_CACHE_CONTROL = "private, max-age=15, stale-while-revalidate=120";
+
 function parseYear(value: string | null): number | null {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
@@ -67,13 +69,15 @@ export async function GET(request: NextRequest) {
       requestedMonth: requestedMonth ?? undefined,
     });
 
-    return success({
+    const response = success({
       ...envelope.payload,
       stale: envelope.stale,
       snapshotStatus: envelope.snapshotStatus,
       mappingVersion: envelope.mappingVersion,
       computedAt: envelope.computedAt,
     });
+    response.headers.set("Cache-Control", SUMMARY_CACHE_CONTROL);
+    return response;
   } catch (err) {
     return handleError(err);
   }

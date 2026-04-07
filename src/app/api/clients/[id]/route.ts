@@ -170,40 +170,102 @@ export async function DELETE(
       return error("Cliente nao encontrado", 404);
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.authSession.deleteMany({
+    await prisma.$transaction([
+      prisma.authSession.deleteMany({
         where: {
           accounting_id: auth.accountingId,
           client_id: id,
         },
-      });
-
-      await tx.accountActionToken.deleteMany({
+      }),
+      prisma.accountActionToken.deleteMany({
         where: {
           client_id: id,
         },
-      });
-
-      await tx.auditEvent.deleteMany({
+      }),
+      prisma.auditEvent.deleteMany({
         where: {
           accounting_id: auth.accountingId,
           client_id: id,
         },
-      });
-
-      await tx.chartOfAccounts.deleteMany({
+      }),
+      prisma.consultativeReportSignal.deleteMany({
         where: {
           accounting_id: auth.accountingId,
           client_id: id,
         },
-      });
-
-      await tx.client.delete({
+      }),
+      prisma.dFCLineMapping.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.dREMapping.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.patrimonialMapping.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.chartOfAccounts.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.monthlyMovement.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.statementSnapshot.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.importBatch.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.backgroundJob.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.notification.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.supportTicket.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.clientDocument.deleteMany({
+        where: {
+          accounting_id: auth.accountingId,
+          client_id: id,
+        },
+      }),
+      prisma.client.delete({
         where: {
           id,
         },
-      });
-    });
+      }),
+    ]);
 
     return success({
       deleted: true,

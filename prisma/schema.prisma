@@ -38,6 +38,7 @@ model Accounting {
   importBatches    ImportBatch[]
   backgroundJobs   BackgroundJob[]
   statementSnapshots StatementSnapshot[]
+  consultativeReportSignals ConsultativeReportSignal[]
 }
 
 model User {
@@ -180,11 +181,48 @@ model Client {
   importBatches    ImportBatch[]
   backgroundJobs   BackgroundJob[]
   statementSnapshots StatementSnapshot[]
+  consultativeReportSignals ConsultativeReportSignal[]
 
   @@index([accounting_id])
   @@index([cnpj])
   @@index([status])
   @@index([deleted_at])
+}
+
+// ============================================================
+// REPORTS: Sinais consultivos internos por cliente
+// ============================================================
+
+model ConsultativeReportSignal {
+  id                   String    @id @default(uuid())
+  accounting_id        String
+  client_id            String
+  category             String
+  severity             String    @default("medium") // "low" | "medium" | "high" | "critical"
+  status               String    @default("open") // "open" | "in_progress" | "resolved"
+  title                String
+  internal_note        String
+  client_talking_point String
+  estimated_value      Float?
+  due_date             DateTime?
+  period_year          Int?
+  period_month         Int?
+  source               String    @default("manual")
+  deleted_at           DateTime?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  accounting Accounting @relation(fields: [accounting_id], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [client_id], references: [id], onDelete: Cascade)
+
+  @@index([accounting_id])
+  @@index([client_id])
+  @@index([category])
+  @@index([severity])
+  @@index([status])
+  @@index([due_date])
+  @@index([deleted_at])
+  @@index([accounting_id, client_id, category, status])
 }
 
 // ============================================================
