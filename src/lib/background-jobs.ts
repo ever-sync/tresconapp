@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 export const MAX_BACKGROUND_JOB_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 30_000;
 const BACKGROUND_RUNNER_TRIGGER_TIMEOUT_MS = 1_200;
+const STALE_BACKGROUND_JOB_PROCESSING_MS = 15 * 60 * 1000;
 
 export type BackgroundJobType =
   | "rebuild_statements"
@@ -187,6 +188,77 @@ export async function completeBackgroundJob(jobId: string) {
       status: "done",
       finished_at: new Date(),
       error_message: null,
+    },
+  });
+}
+
+export async function recoverStaleBackgroundJob(jobId: string) {
+  const current = await prisma.backgroundJob.findUnique({
+    where: { id: jobId },
+    select: {
+      id: true,
+      type: true,
+      status: true,
+      attempts: true,
+      available_at: true,
+      started_at: true,
+      finished_at: true,
+      error_message: true,
+    },
+  });
+
+  if (!current) {
+    return null;
+  }
+
+  if (
+    current.status !== "processing" ||
+    !current.started_at ||
+    Date.now() - current.started_at.getTime() < STALE_BACKGROUND_JOB_PROCESSING_MS
+  ) {
+    return current;
+  }
+
+  const shouldRetry = current.attempts < MAX_BACKGROUND_JOB_ATTEMPTS;
+
+  if (shouldRetry) {
+    return prisma.backgroundJob.update({
+      where: { id: jobId },
+      data: {
+        status: "queued",
+        available_at: new Date(),
+        started_at: null,
+        error_message: "Job retomado automaticamente apos ficar travado em processamento.",
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        attempts: true,
+        available_at: true,
+        started_at: true,
+        finished_at: true,
+        error_message: true,
+      },
+    });
+  }
+
+  return prisma.backgroundJob.update({
+    where: { id: jobId },
+    data: {
+      status: "failed",
+      finished_at: new Date(),
+      error_message: "Job encerrado automaticamente apos exceder o tempo limite de processamento.",
+    },
+    select: {
+      id: true,
+      type: true,
+      status: true,
+      attempts: true,
+      available_at: true,
+      started_at: true,
+      finished_at: true,
+      error_message: true,
     },
   });
 }

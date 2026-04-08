@@ -4,6 +4,7 @@ import { error, handleError, success } from "@/lib/api-response";
 import { requireClient } from "@/lib/auth-guard";
 import {
   enqueueBackgroundJob,
+  recoverStaleBackgroundJob,
   triggerBackgroundJobRunner,
 } from "@/lib/background-jobs";
 import {
@@ -29,6 +30,7 @@ export const runtime = "nodejs";
 export const preferredRegion = "iad1";
 
 const STALE_IMPORT_WINDOW_MS = 30 * 1000;
+const STALE_PRODUCTION_IMPORT_WINDOW_MS = 5 * 60 * 1000;
 
 function isImportAlreadyProcessingError(err: unknown) {
   return (
@@ -169,24 +171,76 @@ export async function POST(request: NextRequest) {
         id: true,
         row_count: true,
         background_job_id: true,
+        started_at: true,
       },
     });
 
     if (existingProcessingBatch) {
-      await triggerBackgroundJobRunner({
-        origin: new URL(request.url).origin,
-        limit: 1,
+      if (existingProcessingBatch.background_job_id) {
+        const backgroundJob = await prisma.backgroundJob.findUnique({
+          where: { id: existingProcessingBatch.background_job_id },
+          select: {
+            id: true,
+            status: true,
+            error_message: true,
+          },
+        });
+
+        if (backgroundJob?.status === "done") {
+          await completeImportBatch({ batchId: existingProcessingBatch.id });
+        } else if (backgroundJob?.status === "failed") {
+          await failImportBatch({
+            batchId: existingProcessingBatch.id,
+            errorMessage:
+              backgroundJob.error_message || "A importacao anterior falhou durante o processamento.",
+          });
+        } else if (backgroundJob?.status === "processing") {
+          const recoveredJob = await recoverStaleBackgroundJob(backgroundJob.id);
+
+          if (recoveredJob?.status === "failed") {
+            await failImportBatch({
+              batchId: existingProcessingBatch.id,
+              errorMessage:
+                recoveredJob.error_message || "A importacao anterior foi encerrada automaticamente.",
+            });
+          }
+        }
+      } else if (
+        Date.now() - existingProcessingBatch.started_at.getTime() > STALE_PRODUCTION_IMPORT_WINDOW_MS
+      ) {
+        await failImportBatch({
+          batchId: existingProcessingBatch.id,
+          errorMessage:
+            "A importacao anterior ficou travada sem job vinculado e foi encerrada automaticamente.",
+        });
+      }
+
+      const refreshedBatch = await prisma.importBatch.findUnique({
+        where: { id: existingProcessingBatch.id },
+        select: {
+          id: true,
+          row_count: true,
+          background_job_id: true,
+          status: true,
+        },
       });
 
-      return success({
-        imported: existingProcessingBatch.row_count,
-        year,
-        valuesMode,
-        status: "processing",
-        batchId: existingProcessingBatch.id,
-        jobId: existingProcessingBatch.background_job_id,
-        alreadyProcessing: true,
-      });
+      if (refreshedBatch?.status === "processing") {
+        await triggerBackgroundJobRunner({
+          origin: new URL(request.url).origin,
+          limit: 1,
+        });
+
+        return success({
+          imported: refreshedBatch.row_count,
+          year,
+          valuesMode,
+          status: "processing",
+          batchId: refreshedBatch.id,
+          jobId: refreshedBatch.background_job_id,
+          alreadyProcessing: true,
+        });
+      }
     }
 
     const parseResult = parseMovementFile(await file.arrayBuffer());
