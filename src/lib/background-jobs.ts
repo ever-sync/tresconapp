@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 
 export const MAX_BACKGROUND_JOB_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 30_000;
-const BACKGROUND_RUNNER_TRIGGER_TIMEOUT_MS = 1_200;
+const BACKGROUND_RUNNER_TRIGGER_TIMEOUT_MS = 10_000;
 const STALE_BACKGROUND_JOB_PROCESSING_MS = 15 * 60 * 1000;
 
 export type BackgroundJobType =
@@ -104,13 +104,14 @@ export async function triggerBackgroundJobRunner(params: {
   const timeoutId = setTimeout(() => controller.abort(), BACKGROUND_RUNNER_TRIGGER_TIMEOUT_MS);
 
   try {
-    await fetch(url, {
+    const response = await fetch(url, {
       method: "GET",
       headers,
       cache: "no-store",
       signal: controller.signal,
     });
-    return true;
+
+    return response.ok;
   } catch {
     return false;
   } finally {

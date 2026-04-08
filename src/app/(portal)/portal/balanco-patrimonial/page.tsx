@@ -85,6 +85,11 @@ type ImportBatchStatus = {
   errorMessage?: string | null;
 };
 
+type BatchWaitResult = "ready" | "processing";
+
+const BATCH_POLL_INTERVAL_MS = 1_500;
+const BATCH_POLL_MAX_ATTEMPTS = 200;
+
 const tabs: Array<{ id: ViewMode; label: string; icon: typeof List }> = [
   { id: "lista", label: "Lista", icon: List },
   { id: "graficos", label: "Graficos", icon: TrendingUp },
@@ -319,9 +324,9 @@ function BalancoPatrimonialPageContent() {
     };
   }, [loadPatrimonial]);
 
-  const waitForBatch = useCallback(async (batchId: string) => {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+  const waitForBatch = useCallback(async (batchId: string): Promise<BatchWaitResult> => {
+    for (let attempt = 0; attempt < BATCH_POLL_MAX_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, BATCH_POLL_INTERVAL_MS));
 
       const response = await fetch(`/api/import-batches/${batchId}`, {
         cache: "no-store",
@@ -334,7 +339,7 @@ function BalancoPatrimonialPageContent() {
 
       const payload = (await response.json()) as ImportBatchStatus;
       if (payload.status === "ready") {
-        return;
+        return "ready";
       }
 
       if (payload.status === "failed") {
@@ -342,7 +347,7 @@ function BalancoPatrimonialPageContent() {
       }
     }
 
-    throw new Error("A importacao ainda esta processando. Tente novamente em instantes.");
+    return "processing";
   }, []);
 
   async function handleUpload() {
@@ -377,9 +382,11 @@ function BalancoPatrimonialPageContent() {
       }
       setYear(String(payload.year));
       if (payload.status === "processing" && payload.batchId) {
-        await waitForBatch(payload.batchId);
+        const batchResult = await waitForBatch(payload.batchId);
         setUploadMessage(
-          `${payload.imported} linha(s) importadas para ${payload.year}. Patrimonial atualizado com sucesso.`
+          batchResult === "ready"
+            ? `${payload.imported} linha(s) importadas para ${payload.year}. Patrimonial atualizado com sucesso.`
+            : `${payload.imported} linha(s) importadas para ${payload.year}. O processamento continua em segundo plano; atualize a tela em alguns instantes.`
         );
       }
       await loadPatrimonial();

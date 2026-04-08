@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { authenticateClient, authenticateStaff } from "@/lib/auth-guard";
 import { success, error, handleError } from "@/lib/api-response";
+import { runQueuedBackgroundJobNow } from "@/lib/background-job-runner";
 import {
   recoverStaleBackgroundJob,
   triggerBackgroundJobRunner,
@@ -86,17 +87,25 @@ export async function GET(
             errorMessage:
               backgroundJob.error_message || "A importacao foi encerrada automaticamente.",
           });
-        } else {
-          await triggerBackgroundJobRunner({
+        } else if (backgroundJob?.status === "queued") {
+          const triggered = await triggerBackgroundJobRunner({
             origin: new URL(request.url).origin,
             limit: 1,
           });
+
+          if (!triggered) {
+            await runQueuedBackgroundJobNow(backgroundJob.id);
+          }
         }
       } else if (backgroundJob?.status === "queued") {
-        await triggerBackgroundJobRunner({
+        const triggered = await triggerBackgroundJobRunner({
           origin: new URL(request.url).origin,
           limit: 1,
         });
+
+        if (!triggered) {
+          await runQueuedBackgroundJobNow(backgroundJob.id);
+        }
       } else if (
         !backgroundJob &&
         Date.now() - batch.started_at.getTime() > STALE_IMPORT_BATCH_WITHOUT_JOB_MS

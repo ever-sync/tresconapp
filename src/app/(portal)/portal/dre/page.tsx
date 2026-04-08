@@ -72,6 +72,11 @@ type ImportBatchStatus = {
   errorMessage?: string | null;
 };
 
+type BatchWaitResult = "ready" | "processing";
+
+const BATCH_POLL_INTERVAL_MS = 1_500;
+const BATCH_POLL_MAX_ATTEMPTS = 200;
+
 const tabs: Array<{ id: ViewMode; label: string; icon: typeof List }> = [
   { id: "lista", label: "Lista", icon: List },
   { id: "graficos", label: "Graficos", icon: BarChart3 },
@@ -277,9 +282,9 @@ function DrePageContent() {
     return () => controller.abort();
   }, [loadSummary]);
 
-  const waitForBatch = useCallback(async (batchId: string) => {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+  const waitForBatch = useCallback(async (batchId: string): Promise<BatchWaitResult> => {
+    for (let attempt = 0; attempt < BATCH_POLL_MAX_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, BATCH_POLL_INTERVAL_MS));
 
       const response = await fetch(`/api/import-batches/${batchId}`, {
         cache: "no-store",
@@ -292,7 +297,7 @@ function DrePageContent() {
 
       const payload = (await response.json()) as ImportBatchStatus;
       if (payload.status === "ready") {
-        return;
+        return "ready";
       }
 
       if (payload.status === "failed") {
@@ -300,7 +305,7 @@ function DrePageContent() {
       }
     }
 
-    throw new Error("A importacao ainda esta processando. Tente novamente em instantes.");
+    return "processing";
   }, []);
 
   function clearSelectedFile() {
@@ -345,12 +350,21 @@ function DrePageContent() {
       }
       setYear(String(payload.year));
       if (payload.status === "processing" && payload.batchId) {
-        await waitForBatch(payload.batchId);
-        setUploadMessage(
-          payload.alreadyProcessing
-            ? `Importacao do DRE concluida para ${payload.year}. Tela atualizada com sucesso.`
-            : `${payload.imported} linha(s) importadas para ${payload.year}. DRE atualizado com sucesso.`
-        );
+        const batchResult = await waitForBatch(payload.batchId);
+
+        if (batchResult === "ready") {
+          setUploadMessage(
+            payload.alreadyProcessing
+              ? `Importacao do DRE concluida para ${payload.year}. Tela atualizada com sucesso.`
+              : `${payload.imported} linha(s) importadas para ${payload.year}. DRE atualizado com sucesso.`
+          );
+        } else {
+          setUploadMessage(
+            payload.alreadyProcessing
+              ? `A importacao do DRE para ${payload.year} segue em processamento em segundo plano. Atualize a tela em alguns instantes.`
+              : `${payload.imported} linha(s) importadas para ${payload.year}. O processamento continua em segundo plano; atualize a tela em alguns instantes.`
+          );
+        }
       }
       await loadSummary();
     } catch (err) {

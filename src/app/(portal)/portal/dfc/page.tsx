@@ -94,6 +94,11 @@ type ImportBatchStatus = {
   errorMessage?: string | null;
 };
 
+type BatchWaitResult = "ready" | "processing";
+
+const BATCH_POLL_INTERVAL_MS = 1_500;
+const BATCH_POLL_MAX_ATTEMPTS = 200;
+
 type BalancetePreviewResponse = {
   fileName: string;
   displayName: string;
@@ -264,9 +269,9 @@ function DfcPageContent() {
     void loadSummary();
   }, [loadSummary]);
 
-  const waitForBatch = useCallback(async (batchId: string) => {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+  const waitForBatch = useCallback(async (batchId: string): Promise<BatchWaitResult> => {
+    for (let attempt = 0; attempt < BATCH_POLL_MAX_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, BATCH_POLL_INTERVAL_MS));
 
       const response = await fetch(`/api/import-batches/${batchId}`, {
         cache: "no-store",
@@ -279,7 +284,7 @@ function DfcPageContent() {
 
       const payload = (await response.json()) as ImportBatchStatus;
       if (payload.status === "ready") {
-        return;
+        return "ready";
       }
 
       if (payload.status === "failed") {
@@ -287,7 +292,7 @@ function DfcPageContent() {
       }
     }
 
-    throw new Error("A importacao ainda esta processando. Tente novamente em instantes.");
+    return "processing";
   }, []);
 
   const monthLabels = data?.monthLabels ?? MONTHS;
@@ -426,9 +431,11 @@ function DfcPageContent() {
         setUploadMessage(
           `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}. Processando DFC...`
         );
-        await waitForBatch(payload.batchId);
+        const batchResult = await waitForBatch(payload.batchId);
         setUploadMessage(
-          `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}. DFC atualizado com sucesso.`
+          batchResult === "ready"
+            ? `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}. DFC atualizado com sucesso.`
+            : `${payload.imported} linha(s) importadas para ${MONTHS[(payload.month ?? MONTHS.indexOf(uploadMonth) + 1) - 1]}/${payload.year}. O processamento continua em segundo plano; atualize a tela em alguns instantes.`
         );
       }
       await loadSummary();
