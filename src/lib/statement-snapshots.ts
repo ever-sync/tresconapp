@@ -664,11 +664,14 @@ async function computeDrePayload(params: {
   accountingId: string;
   clientId: string;
   year: number;
+  movements?: Awaited<ReturnType<typeof loadMovements>>;
+  chartAccounts?: Awaited<ReturnType<typeof loadChartAccounts>>;
+  mappings?: Awaited<ReturnType<typeof loadDreMappings>>;
 }) {
   const [movements, chartAccounts, mappings] = await Promise.all([
-    loadMovements(params.clientId, params.year, "dre"),
-    loadChartAccounts(params.accountingId, params.clientId),
-    loadDreMappings(params.accountingId, params.clientId),
+    params.movements ?? loadMovements(params.clientId, params.year, "dre"),
+    params.chartAccounts ?? loadChartAccounts(params.accountingId, params.clientId),
+    params.mappings ?? loadDreMappings(params.accountingId, params.clientId),
   ]);
 
   if (movements.length === 0) {
@@ -687,12 +690,16 @@ async function computePatrimonialPayload(params: {
   accountingId: string;
   clientId: string;
   year: number;
+  movements?: Awaited<ReturnType<typeof loadMovements>>;
+  dreMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  chartAccounts?: Awaited<ReturnType<typeof loadChartAccounts>>;
+  mappings?: Awaited<ReturnType<typeof loadPatrimonialMappings>>;
 }) {
   const [movements, dreMovements, chartAccounts, mappings] = await Promise.all([
-    loadMovements(params.clientId, params.year, "patrimonial"),
-    loadMovements(params.clientId, params.year, "dre"),
-    loadChartAccounts(params.accountingId, params.clientId),
-    loadPatrimonialMappings(params.accountingId, params.clientId),
+    params.movements ?? loadMovements(params.clientId, params.year, "patrimonial"),
+    params.dreMovements ?? loadMovements(params.clientId, params.year, "dre"),
+    params.chartAccounts ?? loadChartAccounts(params.accountingId, params.clientId),
+    params.mappings ?? loadPatrimonialMappings(params.accountingId, params.clientId),
   ]);
 
   if (movements.length === 0) {
@@ -713,6 +720,11 @@ async function computeDfcPayload(params: {
   clientId: string;
   year: number;
   dre?: DreStatementResult;
+  dreMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  currentPatrimonialMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  previousPatrimonialMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  mappings?: Awaited<ReturnType<typeof loadDfcMappings>>;
+  monthlyBalanceteRowsByMonth?: Awaited<ReturnType<typeof loadDfcBalanceteRowsByMonth>>;
 }) {
   const [
     dre,
@@ -723,12 +735,19 @@ async function computeDfcPayload(params: {
     monthlyBalanceteRowsByMonth,
   ] =
     await Promise.all([
-      params.dre ? Promise.resolve(params.dre) : computeDrePayload(params),
-      loadMovements(params.clientId, params.year, "dre"),
-      loadMovements(params.clientId, params.year, "patrimonial"),
-      loadMovements(params.clientId, params.year - 1, "patrimonial"),
-      loadDfcMappings(params.accountingId, params.clientId),
-      loadDfcBalanceteRowsByMonth(params.clientId, params.year),
+      params.dre
+        ? Promise.resolve(params.dre)
+        : computeDrePayload({
+            accountingId: params.accountingId,
+            clientId: params.clientId,
+            year: params.year,
+            movements: params.dreMovements,
+          }),
+      params.dreMovements ?? loadMovements(params.clientId, params.year, "dre"),
+      params.currentPatrimonialMovements ?? loadMovements(params.clientId, params.year, "patrimonial"),
+      params.previousPatrimonialMovements ?? loadMovements(params.clientId, params.year - 1, "patrimonial"),
+      params.mappings ?? loadDfcMappings(params.accountingId, params.clientId),
+      params.monthlyBalanceteRowsByMonth ?? loadDfcBalanceteRowsByMonth(params.clientId, params.year),
     ]);
 
   const hasMonthlyBalanceteBase =
@@ -753,8 +772,13 @@ export async function rebuildDreSnapshot(params: {
   accountingId: string;
   clientId: string;
   year: number;
+  mappingVersion?: number;
+  movements?: Awaited<ReturnType<typeof loadMovements>>;
+  chartAccounts?: Awaited<ReturnType<typeof loadChartAccounts>>;
+  mappings?: Awaited<ReturnType<typeof loadDreMappings>>;
 }) {
-  const mappingVersion = await getAccountingMappingVersion(params.accountingId);
+  const mappingVersion =
+    params.mappingVersion ?? (await getAccountingMappingVersion(params.accountingId));
   const summary = await computeDrePayload(params);
   const snapshot = await persistSnapshot({
     accountingId: params.accountingId,
@@ -786,11 +810,23 @@ export async function rebuildPatrimonialSnapshot(params: {
   clientId: string;
   year: number;
   dre?: DreStatementResult;
+  mappingVersion?: number;
+  movements?: Awaited<ReturnType<typeof loadMovements>>;
+  dreMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  chartAccounts?: Awaited<ReturnType<typeof loadChartAccounts>>;
+  mappings?: Awaited<ReturnType<typeof loadPatrimonialMappings>>;
 }) {
-  const mappingVersion = await getAccountingMappingVersion(params.accountingId);
+  const mappingVersion =
+    params.mappingVersion ?? (await getAccountingMappingVersion(params.accountingId));
   const [summary, dre] = await Promise.all([
     computePatrimonialPayload(params),
-    params.dre ? Promise.resolve(params.dre) : computeDrePayload(params),
+    params.dre
+      ? Promise.resolve(params.dre)
+      : computeDrePayload({
+          ...params,
+          movements: params.dreMovements,
+          chartAccounts: params.chartAccounts,
+        }),
   ]);
   const metrics = buildPatrimonialMetrics({
     patrimonial: summary,
@@ -830,8 +866,15 @@ export async function rebuildDfcSnapshot(params: {
   clientId: string;
   year: number;
   dre?: DreStatementResult;
+  mappingVersion?: number;
+  dreMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  currentPatrimonialMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  previousPatrimonialMovements?: Awaited<ReturnType<typeof loadMovements>>;
+  mappings?: Awaited<ReturnType<typeof loadDfcMappings>>;
+  monthlyBalanceteRowsByMonth?: Awaited<ReturnType<typeof loadDfcBalanceteRowsByMonth>>;
 }) {
-  const mappingVersion = await getAccountingMappingVersion(params.accountingId);
+  const mappingVersion =
+    params.mappingVersion ?? (await getAccountingMappingVersion(params.accountingId));
   const summary = await computeDfcPayload(params);
   const snapshot = await persistSnapshot({
     accountingId: params.accountingId,
@@ -885,9 +928,56 @@ export async function rebuildStatements(params: {
     return { dre, dfc: dfc.summary };
   }
 
-  const dre = await rebuildDreSnapshot(params);
-  const patrimonial = await rebuildPatrimonialSnapshot({ ...params, dre: dre.summary });
-  const dfc = await rebuildDfcSnapshot({ ...params, dre: dre.summary });
+  const [
+    mappingVersion,
+    dreMovements,
+    currentPatrimonialMovements,
+    previousPatrimonialMovements,
+    chartAccounts,
+    dreMappings,
+    patrimonialMappings,
+    dfcMappings,
+    monthlyBalanceteRowsByMonth,
+  ] = await Promise.all([
+    getAccountingMappingVersion(params.accountingId),
+    loadMovements(params.clientId, params.year, "dre"),
+    loadMovements(params.clientId, params.year, "patrimonial"),
+    loadMovements(params.clientId, params.year - 1, "patrimonial"),
+    loadChartAccounts(params.accountingId, params.clientId),
+    loadDreMappings(params.accountingId, params.clientId),
+    loadPatrimonialMappings(params.accountingId, params.clientId),
+    loadDfcMappings(params.accountingId, params.clientId),
+    loadDfcBalanceteRowsByMonth(params.clientId, params.year),
+  ]);
+
+  const dre = await rebuildDreSnapshot({
+    ...params,
+    mappingVersion,
+    movements: dreMovements,
+    chartAccounts,
+    mappings: dreMappings,
+  });
+  const [patrimonial, dfc] = await Promise.all([
+    rebuildPatrimonialSnapshot({
+      ...params,
+      dre: dre.summary,
+      mappingVersion,
+      movements: currentPatrimonialMovements,
+      dreMovements,
+      chartAccounts,
+      mappings: patrimonialMappings,
+    }),
+    rebuildDfcSnapshot({
+      ...params,
+      dre: dre.summary,
+      mappingVersion,
+      dreMovements,
+      currentPatrimonialMovements,
+      previousPatrimonialMovements,
+      mappings: dfcMappings,
+      monthlyBalanceteRowsByMonth,
+    }),
+  ]);
 
   return {
     dre: dre.summary,

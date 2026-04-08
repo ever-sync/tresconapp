@@ -333,63 +333,21 @@ export async function POST(request: NextRequest) {
       deleted_at: null,
     }));
 
-    let resultsCount = movementPayload.length;
+    const importedTypes = Array.from(new Set(normalizedRows.map((row) => row.type)));
+    const resultsCount = movementPayload.length;
 
-    if (process.env.NODE_ENV !== "production") {
-      const importedTypes = Array.from(new Set(normalizedRows.map((row) => row.type)));
-
-      await prisma.$transaction([
-        prisma.monthlyMovement.deleteMany({
-          where: {
-            client_id: auth.clientId,
-            year,
-            type: { in: importedTypes },
-          },
-        }),
-        prisma.monthlyMovement.createMany({
-          data: movementPayload,
-        }),
-      ]);
-    } else {
-      const results = await prisma.$transaction(
-        normalizedRows.map((row) =>
-          prisma.monthlyMovement.upsert({
-            where: {
-              client_id_year_code_type: {
-                client_id: auth.clientId!,
-                year,
-                code: row.code,
-                type: row.type,
-              },
-            },
-            update: {
-              name: row.name,
-              reduced_code: row.reduced_code,
-              level: row.level,
-              values: row.values,
-              category: row.category,
-              is_mapped: row.is_mapped,
-              deleted_at: null,
-            },
-            create: {
-              accounting_id: auth.accountingId,
-              client_id: auth.clientId!,
-              year,
-              code: row.code,
-              reduced_code: row.reduced_code,
-              name: row.name,
-              level: row.level,
-              values: row.values,
-              type: row.type,
-              category: row.category,
-              is_mapped: row.is_mapped,
-            },
-          })
-        )
-      );
-
-      resultsCount = results.length;
-    }
+    await prisma.$transaction([
+      prisma.monthlyMovement.deleteMany({
+        where: {
+          client_id: auth.clientId,
+          year,
+          type: { in: importedTypes },
+        },
+      }),
+      prisma.monthlyMovement.createMany({
+        data: movementPayload,
+      }),
+    ]);
 
     await updateImportBatchProgress({
       batchId: importBatch.id,
