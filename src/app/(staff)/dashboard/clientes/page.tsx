@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   CheckCircle2,
@@ -66,6 +66,22 @@ type PasswordRequirement = {
   label: string;
   met: boolean;
 };
+
+type CnpjLookupPayload = {
+  error?: string;
+  companyName?: string;
+  industry?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+};
+
+type CnpjLookupFailure = {
+  message: string;
+  expiresAt: number;
+};
+
+const CNPJ_LOOKUP_FAILURE_TTL_MS = 30 * 1000;
 
 const blankForm: ModalForm = {
   companyName: "",
@@ -380,6 +396,10 @@ export default function ClientesPage() {
   const [cnpjLookupMessage, setCnpjLookupMessage] = useState<string | null>(null);
   const [lastLookupCnpj, setLastLookupCnpj] = useState("");
   const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
+  const cnpjLookupCacheRef = useRef<Map<string, CnpjLookupPayload>>(new Map());
+  const cnpjLookupFailureRef = useRef<Map<string, CnpjLookupFailure>>(new Map());
+  const cnpjLookupAbortRef = useRef<AbortController | null>(null);
+  const cnpjLookupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -444,64 +464,124 @@ export default function ClientesPage() {
 
   const passwordStrengthReady = passwordRequirements.every((item) => item.met);
 
+  const clearScheduledCnpjLookup = useCallback(() => {
+    if (!cnpjLookupTimeoutRef.current) return;
+
+    clearTimeout(cnpjLookupTimeoutRef.current);
+    cnpjLookupTimeoutRef.current = null;
+  }, []);
+
+  const applyCnpjLookupPayload = useCallback((payload: CnpjLookupPayload) => {
+    setForm((current) => ({
+      ...current,
+      companyName: current.companyName || payload.companyName || "",
+      industry: current.industry || payload.industry || "",
+      email: current.email || payload.email || "",
+      phone: current.phone || formatPhone(payload.phone || ""),
+      address: current.address || payload.address || "",
+    }));
+    setCnpjLookupMessage(
+      payload.companyName
+        ? `Dados preenchidos automaticamente para ${payload.companyName}.`
+        : "Dados do CNPJ carregados automaticamente."
+    );
+  }, []);
+
   const lookupCnpj = useCallback(async (rawValue: string) => {
     const digits = rawValue.replace(/\D/g, "");
 
-    if (digits.length !== 14 || digits === lastLookupCnpj || cnpjLookupLoading) {
+    if (digits.length !== 14 || digits === lastLookupCnpj) {
       return;
     }
+
+    const recentFailure = cnpjLookupFailureRef.current.get(digits);
+    if (recentFailure) {
+      if (recentFailure.expiresAt > Date.now()) {
+        setCnpjLookupMessage(recentFailure.message);
+        setCnpjLookupLoading(false);
+        return;
+      }
+
+      cnpjLookupFailureRef.current.delete(digits);
+    }
+
+    const cached = cnpjLookupCacheRef.current.get(digits);
+    if (cached) {
+      applyCnpjLookupPayload(cached);
+      setLastLookupCnpj(digits);
+      setCnpjLookupLoading(false);
+      return;
+    }
+
+    cnpjLookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    cnpjLookupAbortRef.current = controller;
 
     setCnpjLookupLoading(true);
     setCnpjLookupMessage(null);
 
     try {
-      const response = await fetch(`/api/cnpj/${digits}`, { cache: "no-store" });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        companyName?: string;
-        industry?: string;
-        email?: string;
-        phone?: string;
-        address?: string;
-      };
+      const response = await fetch(`/api/cnpj/${digits}`, {
+        signal: controller.signal,
+      });
+      const payload = (await response.json().catch(() => ({}))) as CnpjLookupPayload;
 
       if (!response.ok) {
         throw new Error(payload.error || "Nao foi possivel consultar o CNPJ");
       }
 
-      setForm((current) => ({
-        ...current,
-        companyName: current.companyName || payload.companyName || "",
-        industry: current.industry || payload.industry || "",
-        email: current.email || payload.email || "",
-        phone: current.phone || formatPhone(payload.phone || ""),
-        address: current.address || payload.address || "",
-      }));
+      cnpjLookupCacheRef.current.set(digits, payload);
+      cnpjLookupFailureRef.current.delete(digits);
+      applyCnpjLookupPayload(payload);
       setLastLookupCnpj(digits);
-      setCnpjLookupMessage(
-        payload.companyName
-          ? `Dados preenchidos automaticamente para ${payload.companyName}.`
-          : "Dados do CNPJ carregados automaticamente."
-      );
     } catch (err) {
-      setCnpjLookupMessage(
-        err instanceof Error ? err.message : "Nao foi possivel consultar o CNPJ agora."
-      );
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
+
+      const message =
+        err instanceof Error ? err.message : "Nao foi possivel consultar o CNPJ agora.";
+
+      cnpjLookupFailureRef.current.set(digits, {
+        message,
+        expiresAt: Date.now() + CNPJ_LOOKUP_FAILURE_TTL_MS,
+      });
+      setCnpjLookupMessage(message);
     } finally {
-      setCnpjLookupLoading(false);
+      if (cnpjLookupAbortRef.current === controller) {
+        cnpjLookupAbortRef.current = null;
+      }
+
+      if (!controller.signal.aborted) {
+        setCnpjLookupLoading(false);
+      }
     }
-  }, [cnpjLookupLoading, lastLookupCnpj]);
+  }, [applyCnpjLookupPayload, lastLookupCnpj]);
 
   useEffect(() => {
     if (!modalOpen) return;
 
     const digits = form.cnpj.replace(/\D/g, "");
-    if (digits.length === 14) {
-      void lookupCnpj(form.cnpj);
+    clearScheduledCnpjLookup();
+
+    if (digits.length !== 14) {
+      cnpjLookupAbortRef.current?.abort();
+      setCnpjLookupLoading(false);
+      return;
     }
-  }, [form.cnpj, lookupCnpj, modalOpen]);
+
+    cnpjLookupTimeoutRef.current = setTimeout(() => {
+      cnpjLookupTimeoutRef.current = null;
+      void lookupCnpj(digits);
+    }, 250);
+
+    return clearScheduledCnpjLookup;
+  }, [clearScheduledCnpjLookup, form.cnpj, lookupCnpj, modalOpen]);
 
   function closeModal() {
+    clearScheduledCnpjLookup();
+    cnpjLookupAbortRef.current?.abort();
+    cnpjLookupAbortRef.current = null;
     setModalOpen(false);
     setEditingClientId(null);
     setForm(blankForm);
@@ -512,6 +592,9 @@ export default function ClientesPage() {
   }
 
   function openCreateModal() {
+    clearScheduledCnpjLookup();
+    cnpjLookupAbortRef.current?.abort();
+    cnpjLookupAbortRef.current = null;
     setEditingClientId(null);
     setForm(blankForm);
     setShowPassword(false);
@@ -522,6 +605,9 @@ export default function ClientesPage() {
   }
 
   function openEditModal(client: ClientRecord) {
+    clearScheduledCnpjLookup();
+    cnpjLookupAbortRef.current?.abort();
+    cnpjLookupAbortRef.current = null;
     setEditingClientId(client.id);
     setForm(formFromClient(client));
     setShowPassword(false);
@@ -845,7 +931,10 @@ export default function ClientesPage() {
 	                            setLastLookupCnpj("");
 	                          }
 	                        }}
-	                        onBlur={(event) => void lookupCnpj(event.target.value)}
+	                        onBlur={(event) => {
+	                          clearScheduledCnpjLookup();
+	                          void lookupCnpj(event.target.value);
+	                        }}
 	                        placeholder="00.000.000/0001-00"
 	                        className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
 	                      />
